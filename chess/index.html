@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Cờ Vua – Chess Game</title>
+        <meta
+            name="description"
+            content="Game cờ vua trên trình duyệt với giao diện đẹp, đầy đủ luật cờ vua chuẩn."
+        />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body>
+        <div class="app">
+            <!-- Header -->
+            <header class="app-header">
+                <h1 class="logo">♟ Chess</h1>
+                <p class="tagline">Classic chess in your browser</p>
+                <div class="mode-badge" id="mode-badge"></div>
+            </header>
+
+            <!-- Main game area -->
+            <main class="game-container">
+                <!-- Left panel: info + controls -->
+                <aside class="side-panel side-panel--left">
+                    <!-- Captured pieces BLACK captured -->
+                    <div class="captured-panel" id="captured-white">
+                        <span class="captured-label">Trắng bị bắt</span>
+                        <div
+                            class="captured-pieces"
+                            id="captured-white-pieces"
+                        ></div>
+                    </div>
+
+                    <!-- Turn indicator -->
+                    <div class="turn-card" id="turn-card">
+                        <div class="turn-indicator" id="turn-indicator"></div>
+                        <div class="turn-info">
+                            <span class="turn-label">Lượt đi</span>
+                            <span class="turn-player" id="turn-player"
+                                >Trắng</span
+                            >
+                        </div>
+                    </div>
+
+                    <!-- Status message -->
+                    <div class="status-banner" id="status-banner"></div>
+
+                    <!-- Buttons -->
+                    <div class="btn-group">
+                        <button class="btn btn--primary" id="btn-new-game">
+                            🔄 Ván mới
+                        </button>
+                        <button class="btn btn--secondary" id="btn-undo">
+                            ↩ Hoàn tác
+                        </button>
+                    </div>
+
+                    <!-- Captured pieces WHITE captured -->
+                    <div class="captured-panel" id="captured-black">
+                        <span class="captured-label">Đen bị bắt</span>
+                        <div
+                            class="captured-pieces"
+                            id="captured-black-pieces"
+                        ></div>
+                    </div>
+                </aside>
+
+                <!-- Chessboard -->
+                <div class="board-wrapper">
+                    <div
+                        class="board-coords board-coords--cols"
+                        id="col-labels"
+                    >
+                        <span>a</span><span>b</span><span>c</span><span>d</span>
+                        <span>e</span><span>f</span><span>g</span><span>h</span>
+                    </div>
+                    <div
+                        class="board-coords board-coords--rows"
+                        id="row-labels"
+                    >
+                        <span>8</span><span>7</span><span>6</span><span>5</span>
+                        <span>4</span><span>3</span><span>2</span><span>1</span>
+                    </div>
+                    <div class="board" id="board"></div>
+                </div>
+
+                <!-- Right panel: move history -->
+                <aside class="side-panel side-panel--right">
+                    <h2 class="panel-title">Lịch sử nước đi</h2>
+                    <div class="move-list-wrap">
+                        <table class="move-list" id="move-list">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Trắng</th>
+                                    <th>Đen</th>
+                                </tr>
+                            </thead>
+                            <tbody id="move-list-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="move-count" id="move-count">0 nước đi</div>
+                </aside>
+            </main>
+        </div>
+
+        <!-- Game menu modal -->
+        <div class="menu-overlay" id="game-menu">
+            <div class="menu-card">
+                <!-- Step 1: Choose mode -->
+                <div id="menu-step-mode" class="menu-step">
+                    <div class="menu-logo">♟ Chess</div>
+                    <p class="menu-sub">Chọn chế độ chơi</p>
+                    <div class="menu-buttons">
+                        <button class="menu-btn menu-btn--pvp" id="menu-pvp">
+                            <span class="btn-icon">👥</span>
+                            Chơi 2 người
+                            <span class="btn-desc">PvP</span>
+                        </button>
+                        <button class="menu-btn" id="menu-ai">
+                            <span class="btn-icon">🤖</span>
+                            Chơi với máy
+                            <span class="btn-desc">vs AI</span>
+                        </button>
+                        <button class="menu-btn menu-btn--online" id="menu-online">
+                            <span class="btn-icon">🌐</span>
+                            Chơi Online
+                            <span class="btn-desc">Tìm trận ngẫu nhiên</span>
+                        </button>
+                    </div>
+                </div>
+                <!-- Step 2: Choose difficulty -->
+                <div id="menu-step-diff" class="menu-step" hidden>
+                    <div class="menu-logo">🤖 Chơi với máy</div>
+                    <p class="menu-sub">Chọn độ khó</p>
+                    <div class="difficulty-grid">
+                        <button
+                            class="diff-btn diff-btn--easy"
+                            data-diff="easy"
+                        >
+                            <span class="diff-icon">🟢</span>
+                            <span class="diff-label">Dễ</span>
+                            <span class="diff-depth">Random</span>
+                        </button>
+                        <button
+                            class="diff-btn diff-btn--medium"
+                            data-diff="medium"
+                        >
+                            <span class="diff-icon">🟡</span>
+                            <span class="diff-label">Trung bình</span>
+                            <span class="diff-depth">Depth 2</span>
+                        </button>
+                        <button
+                            class="diff-btn diff-btn--hard"
+                            data-diff="hard"
+                        >
+                            <span class="diff-icon">🔴</span>
+                            <span class="diff-label">Khó</span>
+                            <span class="diff-depth">Depth 3</span>
+                        </button>
+                        <button
+                            class="diff-btn diff-btn--superhard"
+                            data-diff="superhard"
+                        >
+                            <span class="diff-icon">💀</span>
+                            <span class="diff-label">Siêu khó</span>
+                            <span class="diff-depth">Depth 4</span>
+                        </button>
+                    </div>
+                    <button class="menu-back" id="menu-back">← Quay lại</button>
+                </div>
+            </div>
+
+            <!-- Step 3: Online name input -->
+            <div id="menu-step-online" class="menu-step" hidden>
+                <div class="menu-logo">🌐 Chơi Online</div>
+                <p class="menu-sub">Nhập tên hiển thị của bạn</p>
+                <div class="online-name-form">
+                    <input
+                        type="text"
+                        id="online-player-name"
+                        class="online-name-input"
+                        placeholder="Tên của bạn..."
+                        maxlength="20"
+                    />
+                    <button class="btn btn--primary" id="btn-start-online">Tìm trận →</button>
+                </div>
+                <button class="menu-back" id="menu-back-online">← Quay lại</button>
+            </div>
+        </div>
+        </div>
+
+        <!-- Lobby: Waiting for opponent -->
+        <div id="lobby-screen" hidden>
+            <div class="lobby-card">
+                <div class="lobby-spinwrap">
+                    <div class="lobby-chess-icon">♟</div>
+                    <div class="lobby-spinner"></div>
+                </div>
+                <h2 class="lobby-title">Đang tìm đối thủ...</h2>
+                <p class="lobby-sub">Vui lòng chờ trong giây lát</p>
+                <button class="btn btn--secondary" id="btn-cancel-queue">✕ Hủy tìm trận</button>
+            </div>
+        </div>
+
+        <!-- Draw offer banner -->
+        <div id="draw-offer-banner" class="draw-offer-banner" hidden>
+            <span>🤝 Đối thủ đề nghị hòa cờ!</span>
+            <button class="btn btn--primary btn--sm" onclick="acceptDraw()">Chấp nhận</button>
+            <button class="btn btn--secondary btn--sm" onclick="declineDraw()">Từ chối</button>
+        </div>
+
+        <!-- Promotion modal -->
+        <div class="modal-overlay" id="promotion-modal" hidden>
+            <div class="modal">
+                <h3 class="modal-title">Phong cấp tốt</h3>
+                <p class="modal-sub">Chọn quân muốn thăng cấp</p>
+                <div class="promotion-choices" id="promotion-choices"></div>
+            </div>
+        </div>
+
+        <!-- Game over modal -->
+        <div class="modal-overlay" id="gameover-modal" hidden>
+            <div class="modal">
+                <div class="modal-icon" id="gameover-icon">♚</div>
+                <h3 class="modal-title" id="gameover-title">Ván cờ kết thúc</h3>
+                <p class="modal-sub" id="gameover-msg"></p>
+                <button class="btn btn--primary" id="btn-again">
+                    🔄 Chơi lại
+                </button>
+            </div>
+        </div>
+
+        <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+        <script src="sounds.js"></script>
+        <script src="online.js"></script>
+        <script src="chess.js"></script>
+    </body>
+</html>

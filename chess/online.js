@@ -7,7 +7,7 @@
 
 // ── Config ──────────────────────────────────────
 // Change this URL when deploying to production
-const SERVER_URL = "http://localhost:3000";
+const SERVER_URL = "https://co-vua-online.onrender.com";
 
 // ── State ────────────────────────────────────────
 let socket = null;

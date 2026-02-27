@@ -73,20 +73,6 @@
 
                 <!-- Chessboard -->
                 <div class="board-wrapper">
-                    <div
-                        class="board-coords board-coords--cols"
-                        id="col-labels"
-                    >
-                        <span>a</span><span>b</span><span>c</span><span>d</span>
-                        <span>e</span><span>f</span><span>g</span><span>h</span>
-                    </div>
-                    <div
-                        class="board-coords board-coords--rows"
-                        id="row-labels"
-                    >
-                        <span>8</span><span>7</span><span>6</span><span>5</span>
-                        <span>4</span><span>3</span><span>2</span><span>1</span>
-                    </div>
                     <div class="board" id="board"></div>
                 </div>
 
@@ -128,7 +114,10 @@
                             Chơi với máy
                             <span class="btn-desc">vs AI</span>
                         </button>
-                        <button class="menu-btn menu-btn--online" id="menu-online">
+                        <button
+                            class="menu-btn menu-btn--online"
+                            id="menu-online"
+                        >
                             <span class="btn-icon">🌐</span>
                             Chơi Online
                             <span class="btn-desc">Tìm trận ngẫu nhiên</span>
@@ -175,25 +164,28 @@
                     </div>
                     <button class="menu-back" id="menu-back">← Quay lại</button>
                 </div>
-            </div>
 
-            <!-- Step 3: Online name input -->
-            <div id="menu-step-online" class="menu-step" hidden>
-                <div class="menu-logo">🌐 Chơi Online</div>
-                <p class="menu-sub">Nhập tên hiển thị của bạn</p>
-                <div class="online-name-form">
-                    <input
-                        type="text"
-                        id="online-player-name"
-                        class="online-name-input"
-                        placeholder="Tên của bạn..."
-                        maxlength="20"
-                    />
-                    <button class="btn btn--primary" id="btn-start-online">Tìm trận →</button>
+                <!-- Step 3: Online name input -->
+                <div id="menu-step-online" class="menu-step" hidden>
+                    <div class="menu-logo">🌐 Chơi Online</div>
+                    <p class="menu-sub">Nhập tên hiển thị của bạn</p>
+                    <div class="online-name-form">
+                        <input
+                            type="text"
+                            id="online-player-name"
+                            class="online-name-input"
+                            placeholder="Tên của bạn..."
+                            maxlength="20"
+                        />
+                        <button class="btn btn--primary" id="btn-start-online">
+                            Tìm trận →
+                        </button>
+                    </div>
+                    <button class="menu-back" id="menu-back-online">
+                        ← Quay lại
+                    </button>
                 </div>
-                <button class="menu-back" id="menu-back-online">← Quay lại</button>
             </div>
-        </div>
         </div>
 
         <!-- Lobby: Waiting for opponent -->
@@ -205,15 +197,21 @@
                 </div>
                 <h2 class="lobby-title">Đang tìm đối thủ...</h2>
                 <p class="lobby-sub">Vui lòng chờ trong giây lát</p>
-                <button class="btn btn--secondary" id="btn-cancel-queue">✕ Hủy tìm trận</button>
+                <button class="btn btn--secondary" id="btn-cancel-queue">
+                    ✕ Hủy tìm trận
+                </button>
             </div>
         </div>
 
         <!-- Draw offer banner -->
         <div id="draw-offer-banner" class="draw-offer-banner" hidden>
             <span>🤝 Đối thủ đề nghị hòa cờ!</span>
-            <button class="btn btn--primary btn--sm" onclick="acceptDraw()">Chấp nhận</button>
-            <button class="btn btn--secondary btn--sm" onclick="declineDraw()">Từ chối</button>
+            <button class="btn btn--primary btn--sm" onclick="acceptDraw()">
+                Chấp nhận
+            </button>
+            <button class="btn btn--secondary btn--sm" onclick="declineDraw()">
+                Từ chối
+            </button>
         </div>
 
         <!-- Promotion modal -->

@@ -622,6 +622,7 @@ let selectedSq = null; // { r, c }
 let legalMoveSqs = []; // array of move objects
 let lastMove = null; // { fr, fc, tr, tc }
 let pendingPromo = null; // move object awaiting promotion choice
+let boardFlipped = false; // true when playing as black in online mode
 
 // ================================================
 // RENDER
@@ -640,8 +641,19 @@ function render() {
 
 function renderBoard() {
     boardEl.innerHTML = "";
-    for (let r = 0; r < 8; r++) {
-        for (let c = 0; c < 8; c++) {
+    // When boardFlipped, render from row 7→0 and col 7→0 so black is at bottom
+    const rowOrder = boardFlipped
+        ? [7, 6, 5, 4, 3, 2, 1, 0]
+        : [0, 1, 2, 3, 4, 5, 6, 7];
+    const colOrder = boardFlipped
+        ? [7, 6, 5, 4, 3, 2, 1, 0]
+        : [0, 1, 2, 3, 4, 5, 6, 7];
+
+    const firstCol = colOrder[0]; // leftmost column displayed
+    const lastRow = rowOrder[7]; // bottom row displayed
+
+    for (const r of rowOrder) {
+        for (const c of colOrder) {
             const sq = document.createElement("div");
             sq.className = "sq " + ((r + c) % 2 === 0 ? "light" : "dark");
             sq.dataset.r = r;
@@ -671,6 +683,22 @@ function renderBoard() {
             if (hint) {
                 sq.classList.add("hint");
                 if (state.board[r][c]) sq.classList.add("has-piece");
+            }
+
+            // ── Inline coordinate labels (chess.com style) ──
+            // Rank number: shown on leftmost column of each row
+            if (c === firstCol) {
+                const rankLabel = document.createElement("span");
+                rankLabel.className = "sq-rank-label";
+                rankLabel.textContent = 8 - r; // row 0 = rank 8, row 7 = rank 1
+                sq.appendChild(rankLabel);
+            }
+            // File letter: shown on bottom row of each column
+            if (r === lastRow) {
+                const fileLabel = document.createElement("span");
+                fileLabel.className = "sq-file-label";
+                fileLabel.textContent = FILE_NAMES[c];
+                sq.appendChild(fileLabel);
             }
 
             // Piece
@@ -793,15 +821,23 @@ function updateCoordSizes() {
     const colEl = document.getElementById("col-labels");
     const rowEl = document.getElementById("row-labels");
     if (colEl) {
-        [...colEl.children].forEach((s) => {
+        const colLabels = boardFlipped
+            ? ["h", "g", "f", "e", "d", "c", "b", "a"]
+            : ["a", "b", "c", "d", "e", "f", "g", "h"];
+        [...colEl.children].forEach((s, i) => {
             s.style.width = sqSize + "px";
             s.style.height = "20px";
+            s.textContent = colLabels[i];
         });
     }
     if (rowEl) {
-        [...rowEl.children].forEach((s) => {
+        const rowLabels = boardFlipped
+            ? ["1", "2", "3", "4", "5", "6", "7", "8"]
+            : ["8", "7", "6", "5", "4", "3", "2", "1"];
+        [...rowEl.children].forEach((s, i) => {
             s.style.width = "20px";
             s.style.height = sqSize + "px";
+            s.textContent = rowLabels[i];
         });
     }
 }
@@ -942,6 +978,7 @@ function showGameOver() {
 // NEW GAME / UNDO
 // ================================================
 function newGame() {
+    boardFlipped = false; // reset board orientation
     initState();
     selectedSq = null;
     legalMoveSqs = [];
@@ -1014,8 +1051,10 @@ function showGameMenu() {
     const menu = document.getElementById("game-menu");
     const stepMode = document.getElementById("menu-step-mode");
     const stepDiff = document.getElementById("menu-step-diff");
+    const stepOnline = document.getElementById("menu-step-online");
     stepMode.hidden = false;
     stepDiff.hidden = true;
+    if (stepOnline) stepOnline.hidden = true;
     menu.hidden = false;
 }
 
@@ -1047,6 +1086,8 @@ function startGame(mode, difficulty) {
 function startOnlineGame(myColor, opponentNameStr) {
     gameMode = "online";
     aiDifficulty = null;
+    // Flip board so the current player always sees themselves at the bottom
+    boardFlipped = myColor === "b";
     hideGameMenu();
     initState();
     selectedSq = null;

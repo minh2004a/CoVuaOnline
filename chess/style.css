@@ -283,32 +283,6 @@ body {
     flex-shrink: 0;
 }
 
-.board-coords {
-    position: absolute;
-    display: flex;
-    pointer-events: none;
-}
-.board-coords span {
-    font-size: 0.65rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    user-select: none;
-}
-
-.board-coords--cols {
-    bottom: -20px;
-    left: 26px;
-    flex-direction: row;
-}
-.board-coords--rows {
-    top: 0;
-    left: 4px;
-    flex-direction: column;
-}
-
 /* ================================
    BOARD
    ================================ */
@@ -379,6 +353,39 @@ body {
 
 .sq:hover:not(.selected) {
     filter: brightness(1.08);
+}
+
+/* Inline coordinate labels (chess.com style) */
+.sq-rank-label {
+    position: absolute;
+    top: 2px;
+    left: 3px;
+    font-size: clamp(0.5rem, 1.2vw, 0.7rem);
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    user-select: none;
+    z-index: 2;
+}
+.sq-file-label {
+    position: absolute;
+    bottom: 2px;
+    right: 3px;
+    font-size: clamp(0.5rem, 1.2vw, 0.7rem);
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+    user-select: none;
+    z-index: 2;
+}
+/* On light squares: label is dark-square color; on dark squares: label is light-square color */
+.sq.light .sq-rank-label,
+.sq.light .sq-file-label {
+    color: var(--sq-dark);
+}
+.sq.dark .sq-rank-label,
+.sq.dark .sq-file-label {
+    color: var(--sq-light);
 }
 
 /* ================================

@@ -589,7 +589,13 @@ body {
 /* ================================
    RESPONSIVE
    ================================ */
+
+/* --- Tablet & large phone (≤ 900px) --- */
 @media (max-width: 900px) {
+    .app {
+        padding: 16px 12px;
+        gap: 14px;
+    }
     .game-container {
         flex-direction: column;
         align-items: center;
@@ -615,17 +621,140 @@ body {
         flex: 1 1 160px;
     }
     .move-list-wrap {
-        max-height: 200px;
+        max-height: min(200px, 25vh);
+    }
+    /* Menu card responsive */
+    .menu-card {
+        padding: 32px 24px;
+        max-width: 96%;
+    }
+    .menu-logo {
+        font-size: 2rem;
     }
 }
 
-@media (max-width: 500px) {
+/* --- Mobile phone (≤ 600px) --- */
+@media (max-width: 600px) {
     .side-panel {
         gap: 8px;
     }
     .btn {
         padding: 8px 12px;
         font-size: 0.8rem;
+    }
+    /* Draw offer banner: allow wrapping on mobile */
+    .draw-offer-banner {
+        white-space: normal;
+        flex-wrap: wrap;
+        min-width: unset;
+        width: 90vw;
+        max-width: 360px;
+        text-align: center;
+        justify-content: center;
+        bottom: 16px;
+        gap: 8px;
+        padding: 12px 14px;
+    }
+    /* Online notification */
+    .online-notification {
+        min-width: unset;
+        width: 90vw;
+        max-width: 340px;
+    }
+    /* Menu card */
+    .menu-card {
+        padding: 28px 18px;
+    }
+    .menu-logo {
+        font-size: 1.7rem;
+    }
+    .menu-sub {
+        margin-bottom: 20px;
+    }
+    .menu-btn {
+        padding: 12px 14px;
+        font-size: 0.88rem;
+    }
+    .diff-btn {
+        padding: 10px 12px;
+    }
+    /* Lobby */
+    .lobby-card {
+        gap: 12px;
+        padding: 0 20px;
+    }
+    .lobby-title {
+        font-size: 1.3rem;
+    }
+    .lobby-spinwrap {
+        width: 80px;
+        height: 80px;
+    }
+    .lobby-chess-icon {
+        font-size: 2.8rem;
+    }
+    /* Promotion modal */
+    .promo-btn {
+        width: 56px;
+        height: 56px;
+        font-size: 2.2rem;
+    }
+    .modal {
+        padding: 28px 20px;
+    }
+}
+
+/* --- Small phone (≤ 400px) --- */
+@media (max-width: 400px) {
+    .app {
+        padding: 10px 8px;
+        gap: 10px;
+    }
+    .logo {
+        font-size: 1.6rem;
+    }
+    .tagline {
+        font-size: 0.72rem;
+        letter-spacing: 1px;
+    }
+    .side-panel {
+        gap: 6px;
+    }
+    .turn-card {
+        padding: 10px;
+        gap: 8px;
+    }
+    .turn-indicator {
+        width: 28px;
+        height: 28px;
+    }
+    .btn {
+        padding: 7px 10px;
+        font-size: 0.78rem;
+    }
+    .btn-group {
+        gap: 6px;
+    }
+    .panel-title {
+        font-size: 0.82rem;
+    }
+    .menu-card {
+        padding: 24px 14px;
+    }
+    .menu-logo {
+        font-size: 1.5rem;
+    }
+    .menu-btn {
+        padding: 10px 12px;
+        font-size: 0.82rem;
+    }
+    .menu-btn .btn-desc {
+        display: none;
+    }
+    .promo-btn {
+        width: 50px;
+        height: 50px;
+        font-size: 1.9rem;
     }
 }
 

@@ -200,6 +200,27 @@ const ChessClock = (() => {
         renderClocks();
     }
 
+    function syncFromServer(whiteMs, blackMs, activeColor) {
+        if (!Number.isFinite(whiteMs) || !Number.isFinite(blackMs)) return;
+
+        timeW = Math.max(0, Math.trunc(whiteMs));
+        timeB = Math.max(0, Math.trunc(blackMs));
+
+        if (activeColor === COLOR.W || activeColor === COLOR.B) {
+            active = activeColor;
+            lastTick = Date.now();
+            if (!intervalId) intervalId = setInterval(tick, 100);
+        } else {
+            active = null;
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
+            }
+        }
+
+        renderClocks();
+    }
+
     function isUnlimited() {
         return selectedTimeControl === 0;
     }
@@ -210,6 +231,7 @@ const ChessClock = (() => {
         reset,
         switchTo,
         applyIncrement,
+        syncFromServer,
         renderClocks,
         isUnlimited,
     };
@@ -217,12 +239,14 @@ const ChessClock = (() => {
 
 function onTimeout(loserColor) {
     if (gameMode === "online") {
-        const myColor =
-            typeof myOnlineColor === "string" ? myOnlineColor : null;
-        if (myColor && loserColor !== myColor) {
-            // In online mode, only the player who flags should report timeout.
-            return;
+        // Server is authoritative for clock expiration in online mode.
+        if (typeof showOnlineNotification === "function") {
+            showOnlineNotification(
+                "Clock reached zero locally. Waiting for server confirmation...",
+                "info",
+            );
         }
+        return;
     }
 
     state.gameOver = true;
@@ -230,12 +254,6 @@ function onTimeout(loserColor) {
     render();
     showGameOver("timeout", loserColor);
     ChessSounds.checkmate();
-    if (
-        gameMode === "online" &&
-        typeof reportTimeoutOnline === "function"
-    ) {
-        reportTimeoutOnline(loserColor);
-    }
 }
 
 // ================================================
@@ -770,15 +788,6 @@ function executeMove(move, promoType) {
     render();
     if (state.gameOver) {
         showGameOver(state.winner ? "checkmate" : "stalemate", null);
-        if (
-            gameMode === "online" &&
-            typeof notifyGameOverOnline === "function"
-        ) {
-            notifyGameOverOnline(
-                state.winner,
-                state.winner ? "checkmate" : "stalemate",
-            );
-        }
     }
 }
 
@@ -790,6 +799,32 @@ let legalMoveSqs = []; // array of move objects
 let lastMove = null; // { fr, fc, tr, tc }
 let pendingPromo = null; // move object awaiting promotion choice
 let boardFlipped = false; // true when playing as black in online mode
+
+function applyOnlineMoveFromServer(move, promoType) {
+    if (!move) return;
+    if (state.gameOver) {
+        state.gameOver = false;
+        state.winner = null;
+        const modal = document.getElementById("gameover-modal");
+        if (modal) modal.hidden = true;
+    }
+    lastMove = move;
+    selectedSq = null;
+    legalMoveSqs = [];
+    pendingPromo = null;
+    executeMove(move, promoType || null);
+}
+
+function syncOnlineClockFromServer(clockSnapshot) {
+    if (!clockSnapshot || !clockSnapshot.enabled) return;
+    const remaining = clockSnapshot.remainingMs || {};
+    if (!Number.isFinite(remaining.w) || !Number.isFinite(remaining.b)) return;
+    ChessClock.syncFromServer(
+        remaining.w,
+        remaining.b,
+        clockSnapshot.activeColor || null,
+    );
+}
 
 // ================================================
 // RENDER
@@ -1036,6 +1071,13 @@ function onSquareClick(e) {
             (typeof myOnlineColor !== "undefined" ? myOnlineColor : state.turn)
     )
         return;
+    if (
+        gameMode === "online" &&
+        typeof isOnlineMovePending === "function" &&
+        isOnlineMovePending()
+    ) {
+        return;
+    }
 
     const sq = e.currentTarget;
     const r = parseInt(sq.dataset.r);
@@ -1051,17 +1093,27 @@ function onSquareClick(e) {
                 showPromoModal(colorOf(state.board[move.fr][move.fc]));
                 return;
             }
-            lastMove = move;
+            if (gameMode !== "online") {
+                lastMove = move;
+            }
             selectedSq = null;
             legalMoveSqs = [];
+            if (gameMode === "online") {
+                const sent = sendMoveOnline(move, null);
+                if (!sent && typeof showOnlineNotification === "function") {
+                    showOnlineNotification(
+                        "Move is waiting for server confirmation.",
+                        "info",
+                    );
+                }
+                renderBoard();
+                return;
+            }
+
             executeMove(move, null);
             // Trigger AI after human move
             if (gameMode === "ai" && !state.gameOver) {
                 scheduleAiMove();
-            }
-            // Send move to server in online mode
-            if (gameMode === "online") {
-                sendMoveOnline(move, null);
             }
             return;
         }
@@ -1117,19 +1169,29 @@ function showPromoModal(color) {
         btn.appendChild(img);
         btn.addEventListener("click", () => {
             modal.hidden = true;
-            lastMove = pendingPromo;
+            if (gameMode !== "online") {
+                lastMove = pendingPromo;
+            }
             const move = pendingPromo;
             pendingPromo = null;
             selectedSq = null;
             legalMoveSqs = [];
+            if (gameMode === "online") {
+                const sent = sendMoveOnline(move, t);
+                if (!sent && typeof showOnlineNotification === "function") {
+                    showOnlineNotification(
+                        "Move is waiting for server confirmation.",
+                        "info",
+                    );
+                }
+                renderBoard();
+                return;
+            }
+
             executeMove(move, t);
             // Trigger AI after human promotion
             if (gameMode === "ai" && !state.gameOver) {
                 scheduleAiMove();
-            }
-            // Send promotion move online
-            if (gameMode === "online") {
-                sendMoveOnline(move, t);
             }
         });
         choices.appendChild(btn);

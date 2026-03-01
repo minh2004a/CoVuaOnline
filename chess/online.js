@@ -17,7 +17,7 @@ let myOnlineColor = null;
 let opponentName = null;
 let drawOfferPending = false;
 let drawRequestSent = false;
-let gameOverReported = false;
+let awaitingMoveAck = false;
 let myRating = null;
 
 let firebaseInitialized = false;
@@ -212,13 +212,14 @@ function connectSocket() {
             color,
             opponentName: opName,
             myRating: freshRating,
+            clock,
             timeControl,
         }) => {
             onlineRoomId = roomId;
             myOnlineColor = color;
             opponentName = opName;
             drawRequestSent = false;
-            gameOverReported = false;
+            awaitingMoveAck = false;
             setDrawOfferButtonPending(false);
 
             const appliedTimeControl = timeControl?.id
@@ -233,13 +234,49 @@ function connectSocket() {
 
             hideLobbyScreen();
             startOnlineGame(color, opName, appliedTimeControl);
+            if (clock && typeof syncOnlineClockFromServer === "function") {
+                syncOnlineClockFromServer(clock);
+            }
             console.log(
                 `[Online] game_start room=${roomId} color=${color} tc=${appliedTimeControl.id}`,
             );
         },
     );
 
+    socket.on("move_applied", ({ move, promoType, playerColor, clock }) => {
+        if (!move) return;
+
+        if (playerColor === myOnlineColor) {
+            awaitingMoveAck = false;
+        }
+
+        drawRequestSent = false;
+        setDrawOfferButtonPending(false);
+
+        if (typeof applyOnlineMoveFromServer === "function") {
+            applyOnlineMoveFromServer(move, promoType || null);
+            if (clock && typeof syncOnlineClockFromServer === "function") {
+                syncOnlineClockFromServer(clock);
+            }
+            return;
+        }
+
+        lastMove = move;
+        selectedSq = null;
+        legalMoveSqs = [];
+        executeMove(move, promoType || null);
+        if (clock && typeof syncOnlineClockFromServer === "function") {
+            syncOnlineClockFromServer(clock);
+        }
+    });
+
+    // Backward-compat event for older servers.
     socket.on("opponent_moved", ({ move, promoType }) => {
+        if (!move) return;
+        if (typeof applyOnlineMoveFromServer === "function") {
+            applyOnlineMoveFromServer(move, promoType || null);
+            return;
+        }
         lastMove = move;
         selectedSq = null;
         legalMoveSqs = [];
@@ -262,6 +299,10 @@ function connectSocket() {
     });
 
     socket.on("game_over", ({ reason, winner, message, ratingUpdate }) => {
+        awaitingMoveAck = false;
+        if (typeof ChessClock !== "undefined" && ChessClock?.stop) {
+            ChessClock.stop();
+        }
         const alreadyOver = state.gameOver;
         const playerColor = myOnlineColor;
 
@@ -290,6 +331,14 @@ function connectSocket() {
         resetOnlineState();
         render();
         refreshLeaderboard();
+    });
+
+    socket.on("move_rejected", ({ message, clock } = {}) => {
+        awaitingMoveAck = false;
+        if (clock && typeof syncOnlineClockFromServer === "function") {
+            syncOnlineClockFromServer(clock);
+        }
+        showOnlineNotification(message || "Move rejected by server.", "warning");
     });
 
     socket.on("error_msg", (msg) => {
@@ -481,12 +530,18 @@ function cancelQueue() {
 }
 
 function sendMoveOnline(move, promoType) {
-    if (!socket || !onlineRoomId) return;
+    if (!socket || !onlineRoomId || awaitingMoveAck) return false;
+    awaitingMoveAck = true;
     socket.emit("move_made", {
         roomId: onlineRoomId,
         move,
         promoType: promoType || null,
     });
+    return true;
+}
+
+function isOnlineMovePending() {
+    return awaitingMoveAck;
 }
 
 function resignOnline() {
@@ -517,29 +572,12 @@ function declineDraw() {
     hideDrawOffer();
 }
 
-function notifyGameOverOnline(winner, reason) {
-    if (!socket || !onlineRoomId || gameOverReported) return;
-    gameOverReported = true;
-    socket.emit("notify_game_over", {
-        roomId: onlineRoomId,
-        winner,
-        reason,
-    });
+function notifyGameOverOnline() {
+    // Server-authoritative mode: ignore local game-over claims.
 }
 
-function reportTimeoutOnline(loserColor) {
-    if (!socket || !onlineRoomId || gameOverReported) return;
-    const normalizedLoser = loserColor === "w" || loserColor === "b"
-        ? loserColor
-        : myOnlineColor;
-    if (!normalizedLoser) return;
-    if (myOnlineColor && normalizedLoser !== myOnlineColor) return;
-
-    gameOverReported = true;
-    socket.emit("timeout_loss", {
-        roomId: onlineRoomId,
-        loser: normalizedLoser,
-    });
+function reportTimeoutOnline() {
+    // Server-authoritative mode: timeout is decided by server clock.
 }
 
 function resetOnlineState() {
@@ -548,7 +586,7 @@ function resetOnlineState() {
     opponentName = null;
     drawOfferPending = false;
     drawRequestSent = false;
-    gameOverReported = false;
+    awaitingMoveAck = false;
     setDrawOfferButtonPending(false);
 }
 

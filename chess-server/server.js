@@ -33,6 +33,17 @@ const {
     verifyGoogleIdToken,
     getClientFirebaseConfig,
 } = require("./firebaseAuth");
+const {
+    createMatchState,
+    applyMove: applyAuthoritativeMove,
+    checkTimeout,
+    getClockSnapshot,
+    getTimeoutDelayMs,
+    offerDraw: offerDrawOnState,
+    declineDraw: declineDrawOnState,
+    acceptDraw: acceptDrawOnState,
+    colorToResult,
+} = require("./matchState");
 
 const app = express();
 const server = http.createServer(app);
@@ -59,9 +70,11 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, "../chess")));
 
 const socketUsers = new Map(); // socketId -> user profile
-const liveMatches = new Map(); // roomId -> { moveCount, claims: Map, finished }
+const liveMatches = new Map(); // roomId -> { state, finished, timeoutHandle }
 let matchmakingInProgress = false;
 const MATCHMAKING_TICK_MS = Number(process.env.MATCHMAKING_TICK_MS) || 3000;
+const CLOCK_TIMEOUT_BUFFER_MS =
+    Number(process.env.CLOCK_TIMEOUT_BUFFER_MS) || 75;
 
 function normalizeRoomId(value) {
     if (typeof value !== "string") return null;
@@ -69,17 +82,15 @@ function normalizeRoomId(value) {
     return normalized || null;
 }
 
-function getOrCreateLiveMatchRuntime(roomId) {
-    const existing = liveMatches.get(roomId);
-    if (existing) return existing;
-    const created = {
-        moveCount: 0,
-        claims: new Map(),
-        finished: false,
-        drawOfferedBy: null,
-    };
-    liveMatches.set(roomId, created);
-    return created;
+function getPlayerColor(room, socketId) {
+    if (!room || !socketId) return null;
+    if (room.whiteSocketId === socketId) return "w";
+    if (room.blackSocketId === socketId) return "b";
+    return null;
+}
+
+function getLiveMatchRuntime(roomId) {
+    return liveMatches.get(roomId) || null;
 }
 
 function normalizeWinner(value) {
@@ -87,10 +98,46 @@ function normalizeWinner(value) {
     return null;
 }
 
-function resultFromWinner(winner) {
-    if (winner === "w") return "white";
-    if (winner === "b") return "black";
-    return "draw";
+function clearRuntimeTimeout(runtime) {
+    if (!runtime?.timeoutHandle) return;
+    clearTimeout(runtime.timeoutHandle);
+    runtime.timeoutHandle = null;
+}
+
+async function handleRuntimeTimeout(roomId) {
+    const runtime = getLiveMatchRuntime(roomId);
+    const room = getRoom(roomId);
+    if (!runtime || runtime.finished || !room) return;
+
+    const timeout = checkTimeout(runtime.state, Date.now());
+    if (!timeout) {
+        scheduleRuntimeTimeout(roomId);
+        return;
+    }
+
+    await concludeMatch(roomId, {
+        winner: timeout.winnerColor,
+        result: timeout.result,
+        reason: timeout.reason,
+    });
+}
+
+function scheduleRuntimeTimeout(roomId) {
+    const runtime = getLiveMatchRuntime(roomId);
+    if (!runtime || runtime.finished) return;
+
+    clearRuntimeTimeout(runtime);
+    const delayMs = getTimeoutDelayMs(runtime.state, Date.now());
+    if (!Number.isFinite(delayMs)) return;
+
+    runtime.timeoutHandle = setTimeout(() => {
+        handleRuntimeTimeout(roomId).catch((error) => {
+            console.error(
+                `[MATCH] timeout handler failed for room ${roomId}:`,
+                error.message,
+            );
+        });
+    }, Math.max(0, Math.trunc(delayMs + CLOCK_TIMEOUT_BUFFER_MS)));
 }
 
 function defaultGameOverMessage(reason, room, winner) {
@@ -126,21 +173,23 @@ async function concludeMatch(roomId, { winner = null, result, reason, message })
     const room = getRoom(roomId);
     if (!room) return;
 
-    const runtime = getOrCreateLiveMatchRuntime(roomId);
-
+    const runtime = getLiveMatchRuntime(roomId);
+    if (!runtime) return;
     if (runtime.finished) return;
+
     runtime.finished = true;
+    clearRuntimeTimeout(runtime);
     liveMatches.set(roomId, runtime);
 
     const finalWinner = normalizeWinner(winner);
-    const finalResult = result || resultFromWinner(finalWinner);
+    const finalResult = result || colorToResult(finalWinner);
 
     try {
         const ratingSummary = await finalizeMatch({
             roomId,
             result: finalResult,
             reason,
-            moveCount: runtime.moveCount,
+            moveCount: runtime.state.moveCount,
         });
 
         if (ratingSummary && ratingSummary.rated) {
@@ -215,11 +264,23 @@ async function startMatchFromQueueEntry(match) {
     }
 
     liveMatches.set(roomId, {
-        moveCount: 0,
-        claims: new Map(),
+        state: createMatchState({
+            baseSeconds: room.baseSeconds,
+            incrementSeconds: room.incrementSeconds,
+        }),
         finished: false,
-        drawOfferedBy: null,
+        timeoutHandle: null,
     });
+    const runtime = getLiveMatchRuntime(roomId);
+    const clock = runtime
+        ? getClockSnapshot(runtime.state, Date.now())
+        : {
+              enabled: false,
+              activeColor: null,
+              incrementMs: 0,
+              remainingMs: { w: null, b: null },
+              serverNowMs: Date.now(),
+          };
 
     whiteSocket.join(roomId);
     blackSocket.join(roomId);
@@ -230,6 +291,8 @@ async function startMatchFromQueueEntry(match) {
         opponentName: black.name,
         myRating: white.rating,
         opponentRating: black.rating,
+        authoritative: true,
+        clock,
         timeControl: {
             id: room.timeControlId,
             label: room.timeControlLabel,
@@ -244,6 +307,8 @@ async function startMatchFromQueueEntry(match) {
         opponentName: white.name,
         myRating: black.rating,
         opponentRating: white.rating,
+        authoritative: true,
+        clock,
         timeControl: {
             id: room.timeControlId,
             label: room.timeControlLabel,
@@ -255,6 +320,8 @@ async function startMatchFromQueueEntry(match) {
     console.log(
         `[MATCH] ${roomId} [${room.timeControlId}]: ${room.whiteName} (W ${room.whiteRating}) vs ${room.blackName} (B ${room.blackRating})`,
     );
+
+    scheduleRuntimeTimeout(roomId);
 }
 
 async function processMatchmakingQueue() {
@@ -358,52 +425,112 @@ io.on("connection", (socket) => {
         socket.emit("queue_cancelled");
     });
 
-    socket.on("move_made", ({ roomId, move, promoType } = {}) => {
+    socket.on("move_made", async ({ roomId, move, promoType } = {}) => {
         const normalizedRoomId = normalizeRoomId(roomId);
         if (!normalizedRoomId) return;
         const room = getRoom(normalizedRoomId);
         if (!room) return;
         if (!isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
-        const runtime = getOrCreateLiveMatchRuntime(normalizedRoomId);
-        if (runtime && !runtime.finished) {
-            runtime.moveCount += 1;
-            // Draw offers expire after any move.
-            runtime.drawOfferedBy = null;
+        const runtime = getLiveMatchRuntime(normalizedRoomId);
+        if (!runtime || runtime.finished) return;
+
+        const playerColor = getPlayerColor(room, socket.id);
+        if (!playerColor) return;
+
+        const applied = applyAuthoritativeMove(runtime.state, {
+            playerColor,
+            move,
+            promoType,
+            nowMs: Date.now(),
+        });
+
+        if (applied.status === "timeout") {
+            await concludeMatch(normalizedRoomId, {
+                winner: applied.winnerColor,
+                result: applied.result,
+                reason: applied.reason,
+            });
+            return;
         }
 
-        const opponent = getOpponent(normalizedRoomId, socket.id);
-        if (opponent) {
-            io.to(opponent).emit("opponent_moved", { move, promoType });
+        if (applied.status === "rejected") {
+            socket.emit("move_rejected", {
+                code: applied.code,
+                message: applied.message,
+                clock: applied.clock || getClockSnapshot(runtime.state, Date.now()),
+            });
+            return;
         }
+
+        io.to(normalizedRoomId).emit("move_applied", {
+            move: applied.move,
+            promoType: applied.promoType || null,
+            playerColor: applied.playerColor,
+            clock: applied.clock,
+        });
+
+        if (applied.outcome) {
+            await concludeMatch(normalizedRoomId, {
+                winner: applied.outcome.winnerColor,
+                result: applied.outcome.result,
+                reason: applied.outcome.reason,
+            });
+            return;
+        }
+
+        scheduleRuntimeTimeout(normalizedRoomId);
     });
 
-    socket.on("offer_draw", ({ roomId } = {}) => {
+    socket.on("offer_draw", async ({ roomId } = {}) => {
         const normalizedRoomId = normalizeRoomId(roomId);
         if (!normalizedRoomId) return;
         const room = getRoom(normalizedRoomId);
         if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
-        const runtime = getOrCreateLiveMatchRuntime(normalizedRoomId);
-        if (runtime.finished || runtime.drawOfferedBy) return;
-        runtime.drawOfferedBy = socket.id;
+        const runtime = getLiveMatchRuntime(normalizedRoomId);
+        if (!runtime || runtime.finished) return;
+
+        const timeout = checkTimeout(runtime.state, Date.now());
+        if (timeout) {
+            await concludeMatch(normalizedRoomId, {
+                winner: timeout.winnerColor,
+                result: timeout.result,
+                reason: timeout.reason,
+            });
+            return;
+        }
+
+        const offered = offerDrawOnState(runtime.state, socket.id);
+        if (!offered.ok) return;
 
         const opponent = getOpponent(normalizedRoomId, socket.id);
         if (opponent) io.to(opponent).emit("draw_offered");
     });
 
-    socket.on("decline_draw", ({ roomId } = {}) => {
+    socket.on("decline_draw", async ({ roomId } = {}) => {
         const normalizedRoomId = normalizeRoomId(roomId);
         if (!normalizedRoomId) return;
         const room = getRoom(normalizedRoomId);
         if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
-        const runtime = getOrCreateLiveMatchRuntime(normalizedRoomId);
-        const offeredBy = runtime.drawOfferedBy;
-        if (!offeredBy || offeredBy === socket.id) return;
+        const runtime = getLiveMatchRuntime(normalizedRoomId);
+        if (!runtime || runtime.finished) return;
 
-        runtime.drawOfferedBy = null;
-        io.to(offeredBy).emit("draw_declined");
+        const timeout = checkTimeout(runtime.state, Date.now());
+        if (timeout) {
+            await concludeMatch(normalizedRoomId, {
+                winner: timeout.winnerColor,
+                result: timeout.result,
+                reason: timeout.reason,
+            });
+            return;
+        }
+
+        const declined = declineDrawOnState(runtime.state, socket.id);
+        if (!declined.ok) return;
+
+        io.to(declined.offeredBy).emit("draw_declined");
     });
 
     socket.on("accept_draw", async ({ roomId } = {}) => {
@@ -412,17 +539,29 @@ io.on("connection", (socket) => {
         const room = getRoom(normalizedRoomId);
         if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
-        const runtime = getOrCreateLiveMatchRuntime(normalizedRoomId);
-        if (!runtime.drawOfferedBy || runtime.drawOfferedBy === socket.id) {
+        const runtime = getLiveMatchRuntime(normalizedRoomId);
+        if (!runtime || runtime.finished) return;
+
+        const timeout = checkTimeout(runtime.state, Date.now());
+        if (timeout) {
+            await concludeMatch(normalizedRoomId, {
+                winner: timeout.winnerColor,
+                result: timeout.result,
+                reason: timeout.reason,
+            });
+            return;
+        }
+
+        const accepted = acceptDrawOnState(runtime.state, socket.id);
+        if (!accepted.ok) {
             socket.emit("error_msg", "No valid draw offer to accept.");
             return;
         }
-        runtime.drawOfferedBy = null;
 
         await concludeMatch(normalizedRoomId, {
-            winner: null,
-            result: "draw",
-            reason: "draw",
+            winner: accepted.winnerColor,
+            result: accepted.result,
+            reason: accepted.reason,
         });
     });
 
@@ -437,27 +576,17 @@ io.on("connection", (socket) => {
 
         await concludeMatch(normalizedRoomId, {
             winner,
-            result: resultFromWinner(winner),
+            result: colorToResult(winner),
             reason: "resign",
         });
     });
 
-    socket.on("timeout_loss", async ({ roomId, loser } = {}) => {
-        const room = getRoom(roomId);
-        if (!room || !isPlayerInRoom(roomId, socket.id)) return;
-
-        const senderColor = room.whiteSocketId === socket.id ? "w" : "b";
-        if (loser && loser !== senderColor) {
-            socket.emit("error_msg", "Invalid timeout payload.");
-            return;
-        }
-
-        const winner = senderColor === "w" ? "b" : "w";
-        await concludeMatch(roomId, {
-            winner,
-            result: resultFromWinner(winner),
-            reason: "timeout",
-        });
+    // Deprecated client event. Timeout is decided by server clock only.
+    socket.on("timeout_loss", ({ roomId } = {}) => {
+        const normalizedRoomId = normalizeRoomId(roomId);
+        if (!normalizedRoomId) return;
+        const room = getRoom(normalizedRoomId);
+        if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
     });
 
     socket.on("leave_game", async ({ roomId } = {}) => {
@@ -471,73 +600,18 @@ io.on("connection", (socket) => {
 
         await concludeMatch(normalizedRoomId, {
             winner,
-            result: resultFromWinner(winner),
+            result: colorToResult(winner),
             reason: "disconnect",
             message: `${isWhite ? room.whiteName : room.blackName} left the game.`,
         });
     });
 
-    socket.on("notify_game_over", async ({ roomId, winner, reason } = {}) => {
+    // Deprecated client event. Game end is decided by server move validation.
+    socket.on("notify_game_over", ({ roomId } = {}) => {
         const normalizedRoomId = normalizeRoomId(roomId);
         if (!normalizedRoomId) return;
         const room = getRoom(normalizedRoomId);
         if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
-
-        const normalizedReason =
-            reason === "checkmate" || reason === "stalemate" ? reason : null;
-        if (!normalizedReason) {
-            socket.emit("error_msg", "Invalid game over reason.");
-            return;
-        }
-
-        let normalizedWinner = normalizeWinner(winner);
-        if (normalizedReason === "stalemate") {
-            normalizedWinner = null;
-        }
-        if (normalizedReason === "checkmate" && !normalizedWinner) {
-            socket.emit("error_msg", "Checkmate must include winner.");
-            return;
-        }
-
-        const runtime = getOrCreateLiveMatchRuntime(normalizedRoomId);
-
-        if (runtime.finished) return;
-        runtime.claims.set(socket.id, {
-            winner: normalizedWinner,
-            reason: normalizedReason,
-        });
-        liveMatches.set(normalizedRoomId, runtime);
-
-        if (runtime.claims.size < 2) {
-            socket.emit("game_over_pending", {
-                reason: normalizedReason,
-            });
-            return;
-        }
-
-        const whiteClaim = runtime.claims.get(room.whiteSocketId);
-        const blackClaim = runtime.claims.get(room.blackSocketId);
-
-        if (!whiteClaim || !blackClaim) return;
-
-        const matched =
-            whiteClaim.reason === blackClaim.reason &&
-            whiteClaim.winner === blackClaim.winner;
-
-        if (!matched) {
-            await concludeMatch(normalizedRoomId, {
-                winner: null,
-                result: "disputed",
-                reason: "disputed",
-            });
-            return;
-        }
-
-        await concludeMatch(normalizedRoomId, {
-            winner: whiteClaim.winner,
-            result: resultFromWinner(whiteClaim.winner),
-            reason: whiteClaim.reason,
-        });
     });
 
     socket.on("disconnect", async () => {
@@ -553,7 +627,7 @@ io.on("connection", (socket) => {
                 const winner = isWhite ? "b" : "w";
                 await concludeMatch(roomId, {
                     winner,
-                    result: resultFromWinner(winner),
+                    result: colorToResult(winner),
                     reason: "disconnect",
                     message: `${isWhite ? room.whiteName : room.blackName} disconnected.`,
                 });

@@ -59,6 +59,8 @@ app.use(express.static(path.join(__dirname, "../chess")));
 
 const socketUsers = new Map(); // socketId -> user profile
 const liveMatches = new Map(); // roomId -> { moveCount, claims: Map, finished }
+let matchmakingInProgress = false;
+const MATCHMAKING_TICK_MS = Number(process.env.MATCHMAKING_TICK_MS) || 3000;
 
 function normalizeWinner(value) {
     if (value === "w" || value === "b") return value;
@@ -161,6 +163,82 @@ async function concludeMatch(roomId, { winner = null, result, reason, message })
     }
 }
 
+async function startMatchFromQueueEntry(match) {
+    const { roomId, white, black, room } = match;
+    const whiteSocket = io.sockets.sockets.get(white.socketId);
+    const blackSocket = io.sockets.sockets.get(black.socketId);
+
+    if (!whiteSocket || !blackSocket) {
+        closeRoom(roomId);
+        if (whiteSocket) {
+            whiteSocket.emit("error_msg", "Opponent disconnected before start.");
+        }
+        if (blackSocket) {
+            blackSocket.emit("error_msg", "Opponent disconnected before start.");
+        }
+        return;
+    }
+
+    try {
+        await createMatchRecord({
+            roomId,
+            whiteUserId: room.whiteUserId,
+            blackUserId: room.blackUserId,
+        });
+    } catch (error) {
+        console.error(`[MATCH] create record failed for ${roomId}:`, error.message);
+        closeRoom(roomId);
+        whiteSocket.emit("error_msg", "Failed to start ranked match.");
+        blackSocket.emit("error_msg", "Failed to start ranked match.");
+        return;
+    }
+
+    liveMatches.set(roomId, {
+        moveCount: 0,
+        claims: new Map(),
+        finished: false,
+    });
+
+    whiteSocket.join(roomId);
+    blackSocket.join(roomId);
+
+    io.to(white.socketId).emit("game_start", {
+        roomId,
+        color: "w",
+        opponentName: black.name,
+        myRating: white.rating,
+        opponentRating: black.rating,
+    });
+
+    io.to(black.socketId).emit("game_start", {
+        roomId,
+        color: "b",
+        opponentName: white.name,
+        myRating: black.rating,
+        opponentRating: white.rating,
+    });
+
+    console.log(
+        `[MATCH] ${roomId}: ${room.whiteName} (W ${room.whiteRating}) vs ${room.blackName} (B ${room.blackRating})`,
+    );
+}
+
+async function processMatchmakingQueue() {
+    if (matchmakingInProgress) return;
+    matchmakingInProgress = true;
+
+    try {
+        while (true) {
+            const match = tryMatch();
+            if (!match) break;
+            // Sequentially start matches to keep DB writes and room state consistent.
+            await startMatchFromQueueEntry(match);
+        }
+    } finally {
+        matchmakingInProgress = false;
+    }
+}
+
 app.get("/api/stats", (req, res) => {
     res.json({
         ...getStats(),
@@ -229,66 +307,7 @@ io.on("connection", (socket) => {
             position: getQueuePosition(socket.id),
         });
 
-        const match = tryMatch();
-        if (!match) return;
-
-        const { roomId, white, black, room } = match;
-        const whiteSocket = io.sockets.sockets.get(white.socketId);
-        const blackSocket = io.sockets.sockets.get(black.socketId);
-
-        if (!whiteSocket || !blackSocket) {
-            closeRoom(roomId);
-            if (whiteSocket) {
-                whiteSocket.emit("error_msg", "Opponent disconnected before start.");
-            }
-            if (blackSocket) {
-                blackSocket.emit("error_msg", "Opponent disconnected before start.");
-            }
-            return;
-        }
-
-        try {
-            await createMatchRecord({
-                roomId,
-                whiteUserId: room.whiteUserId,
-                blackUserId: room.blackUserId,
-            });
-        } catch (error) {
-            console.error(`[MATCH] create record failed for ${roomId}:`, error.message);
-            closeRoom(roomId);
-            whiteSocket.emit("error_msg", "Failed to start ranked match.");
-            blackSocket.emit("error_msg", "Failed to start ranked match.");
-            return;
-        }
-
-        liveMatches.set(roomId, {
-            moveCount: 0,
-            claims: new Map(),
-            finished: false,
-        });
-
-        whiteSocket.join(roomId);
-        blackSocket.join(roomId);
-
-        io.to(white.socketId).emit("game_start", {
-            roomId,
-            color: "w",
-            opponentName: black.name,
-            myRating: white.rating,
-            opponentRating: black.rating,
-        });
-
-        io.to(black.socketId).emit("game_start", {
-            roomId,
-            color: "b",
-            opponentName: white.name,
-            myRating: black.rating,
-            opponentRating: white.rating,
-        });
-
-        console.log(
-            `[MATCH] ${roomId}: ${room.whiteName} (W ${room.whiteRating}) vs ${room.blackName} (B ${room.blackRating})`,
-        );
+        await processMatchmakingQueue();
     });
 
     socket.on("cancel_queue", () => {
@@ -477,6 +496,12 @@ async function bootstrap() {
         console.log(`Chess server listening on http://localhost:${PORT}`);
         console.log(`Serving static client from ../chess`);
     });
+
+    setInterval(() => {
+        processMatchmakingQueue().catch((error) => {
+            console.error("[MATCH] periodic matchmaking failed:", error.message);
+        });
+    }, MATCHMAKING_TICK_MS);
 }
 
 bootstrap().catch((error) => {

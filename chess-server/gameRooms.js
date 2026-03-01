@@ -6,10 +6,34 @@
  *   socketId,
  *   userId,
  *   name,
- *   rating
+ *   rating,
+ *   queuedAt
  * }
  */
 const queue = [];
+
+const DEFAULT_BASE_RATING_GAP = 100;
+const DEFAULT_GAP_GROWTH_PER_SECOND = 8;
+const DEFAULT_MAX_RATING_GAP = 600;
+
+function parsePositiveNumber(value, fallback) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return parsed;
+}
+
+const MATCH_BASE_RATING_GAP = parsePositiveNumber(
+    process.env.MATCH_BASE_RATING_GAP,
+    DEFAULT_BASE_RATING_GAP,
+);
+const MATCH_GAP_GROWTH_PER_SECOND = parsePositiveNumber(
+    process.env.MATCH_GAP_GROWTH_PER_SECOND,
+    DEFAULT_GAP_GROWTH_PER_SECOND,
+);
+const MATCH_MAX_RATING_GAP = parsePositiveNumber(
+    process.env.MATCH_MAX_RATING_GAP,
+    DEFAULT_MAX_RATING_GAP,
+);
 
 /**
  * Room shape:
@@ -45,6 +69,7 @@ function joinQueue(player) {
         userId: player.userId,
         name: player.name || "Player",
         rating: Number.isFinite(player.rating) ? player.rating : 1200,
+        queuedAt: Date.now(),
     });
     return true;
 }
@@ -62,34 +87,58 @@ function getQueuePosition(socketId) {
 function tryMatch() {
     if (queue.length < 2) return null;
 
-    const p1 = queue.shift();
-    const p2 = queue.shift();
+    const now = Date.now();
+    for (let i = 0; i < queue.length - 1; i += 1) {
+        const seeker = queue[i];
+        const seekerGap = currentAllowedGap(seeker, now);
 
-    const [white, black] = Math.random() < 0.5 ? [p1, p2] : [p2, p1];
-    const roomId = generateRoomId();
-    const room = {
-        roomId,
-        whiteSocketId: white.socketId,
-        blackSocketId: black.socketId,
-        whiteUserId: white.userId,
-        blackUserId: black.userId,
-        whiteName: white.name,
-        blackName: black.name,
-        whiteRating: white.rating,
-        blackRating: black.rating,
-        createdAt: Date.now(),
-    };
+        let bestIdx = -1;
+        let bestDiff = Number.POSITIVE_INFINITY;
 
-    rooms.set(roomId, room);
-    playerRoom.set(white.socketId, roomId);
-    playerRoom.set(black.socketId, roomId);
+        for (let j = i + 1; j < queue.length; j += 1) {
+            const candidate = queue[j];
+            const diff = Math.abs(seeker.rating - candidate.rating);
+            const candidateGap = currentAllowedGap(candidate, now);
 
-    return {
-        roomId,
-        white,
-        black,
-        room,
-    };
+            if (diff > seekerGap || diff > candidateGap) continue;
+            if (diff >= bestDiff) continue;
+
+            bestDiff = diff;
+            bestIdx = j;
+        }
+
+        if (bestIdx === -1) continue;
+
+        const p2 = queue.splice(bestIdx, 1)[0];
+        const p1 = queue.splice(i, 1)[0];
+        const [white, black] = Math.random() < 0.5 ? [p1, p2] : [p2, p1];
+        const roomId = generateRoomId();
+        const room = {
+            roomId,
+            whiteSocketId: white.socketId,
+            blackSocketId: black.socketId,
+            whiteUserId: white.userId,
+            blackUserId: black.userId,
+            whiteName: white.name,
+            blackName: black.name,
+            whiteRating: white.rating,
+            blackRating: black.rating,
+            createdAt: Date.now(),
+        };
+
+        rooms.set(roomId, room);
+        playerRoom.set(white.socketId, roomId);
+        playerRoom.set(black.socketId, roomId);
+
+        return {
+            roomId,
+            white,
+            black,
+            room,
+        };
+    }
+
+    return null;
 }
 
 function getRoom(roomId) {
@@ -133,6 +182,14 @@ function getOpponent(roomId, mySocketId) {
 
 function generateRoomId() {
     return Math.random().toString(36).slice(2, 10).toUpperCase();
+}
+
+function currentAllowedGap(player, nowTs) {
+    const now = Number.isFinite(nowTs) ? nowTs : Date.now();
+    const queuedAt = Number.isFinite(player?.queuedAt) ? player.queuedAt : now;
+    const waitedSeconds = Math.max(0, (now - queuedAt) / 1000);
+    const dynamicGap = MATCH_BASE_RATING_GAP + waitedSeconds * MATCH_GAP_GROWTH_PER_SECOND;
+    return Math.min(MATCH_MAX_RATING_GAP, dynamicGap);
 }
 
 function getStats() {

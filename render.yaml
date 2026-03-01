@@ -17,7 +17,15 @@ services:
       - key: CHESS_DB_PATH
         value: /var/data/chess-online.sqlite
       - key: CORS_ORIGIN
-        value: "*"
+        value: "https://chess-online.onrender.com"
+      - key: DB_BACKUP_ENABLED
+        value: "true"
+      - key: DB_BACKUP_INTERVAL_HOURS
+        value: "24"
+      - key: DB_BACKUP_RETENTION_DAYS
+        value: "14"
+      - key: DB_BACKUP_DIR
+        value: "/var/data/backups"
       - key: FIREBASE_PROJECT_ID
         sync: false
       - key: FIREBASE_CLIENT_EMAIL

@@ -44,26 +44,68 @@ const {
     acceptDraw: acceptDrawOnState,
     colorToResult,
 } = require("./matchState");
+const { startDbBackupScheduler } = require("./dbBackup");
 
 const app = express();
 const server = http.createServer(app);
 
-const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(",")
-          .map((item) => item.trim())
-          .filter(Boolean)
-    : "*";
+const DEFAULT_DEV_ORIGINS = ["http://localhost:3000", "http://127.0.0.1:3000"];
+
+function parseAllowedOrigins(rawOrigins) {
+    if (!rawOrigins) {
+        if (process.env.NODE_ENV === "production") {
+            throw new Error(
+                "CORS_ORIGIN is required in production and must contain explicit origins.",
+            );
+        }
+        return DEFAULT_DEV_ORIGINS;
+    }
+
+    const parsed = rawOrigins
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean);
+
+    if (parsed.includes("*")) {
+        if (process.env.NODE_ENV === "production") {
+            throw new Error(
+                "CORS_ORIGIN must list explicit origins in production. Wildcard '*' is not allowed.",
+            );
+        }
+        console.warn(
+            "[CORS] Wildcard '*' is ignored. Using local development origins instead.",
+        );
+        return DEFAULT_DEV_ORIGINS;
+    }
+
+    return parsed.length > 0 ? parsed : DEFAULT_DEV_ORIGINS;
+}
+
+const allowedOrigins = parseAllowedOrigins(process.env.CORS_ORIGIN);
+
+function corsOriginValidator(origin, callback) {
+    // Some same-origin or server-to-server calls do not send Origin.
+    if (!origin) {
+        callback(null, true);
+        return;
+    }
+    if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+    }
+    callback(new Error(`CORS blocked for origin: ${origin}`));
+}
 
 const io = new Server(server, {
     cors: {
-        origin: allowedOrigins,
+        origin: corsOriginValidator,
         methods: ["GET", "POST"],
     },
 });
 
 app.use(
     cors({
-        origin: allowedOrigins,
+        origin: corsOriginValidator,
     }),
 );
 app.use(express.json());
@@ -640,6 +682,16 @@ io.on("connection", (socket) => {
 
 async function bootstrap() {
     await initDb();
+
+    console.log(`[CORS] Allowed origins: ${allowedOrigins.join(", ")}`);
+
+    const backupScheduler = startDbBackupScheduler();
+    if (backupScheduler) {
+        const { backupDir, intervalHours, retentionDays } = backupScheduler.settings;
+        console.log(
+            `[BACKUP] Enabled. Every ${intervalHours}h -> ${backupDir} (retention ${retentionDays} days).`,
+        );
+    }
 
     if (!isAuthReady()) {
         const error = getAuthInitError();

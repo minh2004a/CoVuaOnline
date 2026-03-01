@@ -23,7 +23,7 @@ Service nay se:
 
 Trong service vua tao, dien cac bien sau:
 
-- `CORS_ORIGIN`: de `*` de test nhanh, hoac set domain production khi muon gioi han CORS
+- `CORS_ORIGIN`: bat buoc la domain that (vi du `https://chess-online.onrender.com`), KHONG dung `*`
 - `FIREBASE_PROJECT_ID`
 - `FIREBASE_CLIENT_EMAIL`
 - `FIREBASE_PRIVATE_KEY`
@@ -33,6 +33,10 @@ Trong service vua tao, dien cac bien sau:
 - `FIREBASE_WEB_APP_ID`
 - `FIREBASE_WEB_MESSAGING_SENDER_ID` (optional)
 - `FIREBASE_WEB_MEASUREMENT_ID` (optional)
+- `DB_BACKUP_ENABLED` (`true`)
+- `DB_BACKUP_INTERVAL_HOURS` (`24`)
+- `DB_BACKUP_RETENTION_DAYS` (`14`)
+- `DB_BACKUP_DIR` (`/var/data/backups`)
 
 Goi y map tu file `firebase-admin.json`:
 
@@ -43,7 +47,8 @@ Goi y map tu file `firebase-admin.json`:
 Luu y:
 - Khong commit secret vao git.
 - `FIREBASE_PRIVATE_KEY` can dung format key. Neu Render khong nhan multi-line, dung dang escaped `\n`.
-- Neu set `CORS_ORIGIN` theo domain production, nho dung domain Render cua service.
+- Khong dat `CORS_ORIGIN=*` tren production.
+- Khuyen nghi dat secret Firebase trong Render Environment, khong luu file JSON key trong repo.
 
 ## 4) Cau hinh Firebase Auth cho domain Render
 
@@ -68,4 +73,18 @@ Neu khong them domain nay, dang nhap Google popup se bi chan.
 ## 6) Ghi chu van hanh
 
 - `CHESS_DB_PATH` da tro ve `/var/data/chess-online.sqlite` trong `render.yaml`.
+- Backup SQLite tu dong chay trong server theo lich (`DB_BACKUP_INTERVAL_HOURS`), file backup nam o `DB_BACKUP_DIR`.
+- Co the backup thu cong bat ky luc nao: `npm --prefix chess-server run backup:db`
 - Render Free co the sleep khi khong dung; phien realtime co the bi ngat khi service ngu.
+
+## 7) Rollback nhanh bang release tag
+
+Muc tieu: moi lan deploy production deu co 1 git tag de quay lai nhanh.
+
+1. Tao tag sau khi code da commit:
+   - `npm --prefix chess-server run release:tag -- release-20260301-1430`
+2. Push tag:
+   - `git push origin release-20260301-1430`
+3. Khi can rollback:
+   - checkout tag: `git checkout release-20260301-1430`
+   - redeploy commit cua tag do tren Render.

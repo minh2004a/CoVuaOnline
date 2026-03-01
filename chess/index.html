@@ -48,6 +48,49 @@
                         </div>
                     </div>
 
+                    <!-- Online status card -->
+                    <div class="online-status-card" id="online-status-card" hidden>
+                        <div class="online-status-head">
+                            <span class="online-status-title">Online match</span>
+                            <span class="online-status-conn" id="online-status-conn">
+                                Offline
+                            </span>
+                        </div>
+                        <div
+                            class="online-status-reconnect"
+                            id="online-status-reconnect"
+                            hidden
+                        >
+                            Dang ket noi lai...
+                        </div>
+                        <div class="online-status-grid">
+                            <div class="online-status-row">
+                                <span>Opponent</span>
+                                <strong id="online-status-opponent">-</strong>
+                            </div>
+                            <div class="online-status-row">
+                                <span>Elo</span>
+                                <strong id="online-status-elo">-</strong>
+                            </div>
+                            <div class="online-status-row">
+                                <span>Time</span>
+                                <strong id="online-status-time">-</strong>
+                            </div>
+                            <div class="online-status-row">
+                                <span>Turn</span>
+                                <strong id="online-status-turn">-</strong>
+                            </div>
+                        </div>
+                        <label class="online-status-option" for="clock-beep-toggle">
+                            <input
+                                id="clock-beep-toggle"
+                                type="checkbox"
+                                checked
+                            />
+                            Beep warning &lt;10s
+                        </label>
+                    </div>
+
                     <!-- Status message -->
                     <div class="status-banner" id="status-banner"></div>
 
@@ -110,6 +153,9 @@
                         <div class="clock-color-dot clock-dot--black"></div>
                         <div class="clock-info">
                             <span class="clock-name">Đen</span>
+                            <span class="clock-state" id="clock-black-state"
+                                >Cho</span
+                            >
                             <span class="clock-time" id="clock-black-time"
                                 >—</span
                             >
@@ -125,6 +171,9 @@
                         <div class="clock-color-dot clock-dot--white"></div>
                         <div class="clock-info">
                             <span class="clock-name">Trắng</span>
+                            <span class="clock-state" id="clock-white-state"
+                                >Cho</span
+                            >
                             <span class="clock-time" id="clock-white-time"
                                 >—</span
                             >

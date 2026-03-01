@@ -228,9 +228,15 @@
                 </div>
 
                 <!-- Step 3: Online ranked -->
-                <div id="menu-step-online" class="menu-step" hidden>
+                <div id="menu-step-online" class="menu-step menu-step--online" hidden>
                     <div class="menu-logo">Online Chess</div>
                     <p class="menu-sub">Đăng nhập Google để chơi xếp hạng</p>
+
+                    <div class="online-hero-pills">
+                        <span class="online-pill">Realtime Match</span>
+                        <span class="online-pill">Elo Tracking</span>
+                        <span class="online-pill">Server Clock</span>
+                    </div>
 
                     <div class="online-auth" id="online-auth-logged-out">
                         <button class="btn btn--primary" id="btn-google-login">
@@ -303,10 +309,16 @@
                     </div>
 
                     <div class="leaderboard-card">
-                        <h3 class="leaderboard-title">Top Elo</h3>
+                        <div class="leaderboard-head">
+                            <h3 class="leaderboard-title">Top Elo</h3>
+                            <span class="leaderboard-updated" id="leaderboard-updated"
+                                >Updating...</span
+                            >
+                        </div>
                         <div
                             class="leaderboard-list"
                             id="leaderboard-list"
+                            aria-live="polite"
                         ></div>
                     </div>
 
@@ -326,6 +338,14 @@
                 </div>
                 <h2 class="lobby-title">Đang tìm đối thủ...</h2>
                 <p class="lobby-sub" id="lobby-time-control">Ranked 10|0</p>
+                <div class="lobby-meta">
+                    <span class="lobby-elapsed" id="lobby-elapsed">00:00</span>
+                    <span class="lobby-dot" aria-hidden="true"></span>
+                    <span class="lobby-hint">Matching by rating and queue time</span>
+                </div>
+                <div class="lobby-progress" aria-hidden="true">
+                    <span></span>
+                </div>
                 <button class="btn btn--secondary" id="btn-cancel-queue">
                     ✕ Hủy tìm trận
                 </button>

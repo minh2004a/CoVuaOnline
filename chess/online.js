@@ -44,6 +44,8 @@ const ONLINE_TIME_CONTROLS = Object.freeze({
 });
 const DEFAULT_ONLINE_TIME_CONTROL_ID = "10|0";
 let selectedOnlineTimeControlId = DEFAULT_ONLINE_TIME_CONTROL_ID;
+let lobbyStartedAtMs = null;
+let lobbyElapsedTimer = null;
 
 function getEl(id) {
     return document.getElementById(id);
@@ -77,6 +79,68 @@ function setOnlineTimeControlSelection(timeControlId) {
     if (selectedEl) {
         selectedEl.textContent = `Time: ${getOnlineTimeControl(normalized).label}`;
     }
+}
+
+function setLeaderboardLoading() {
+    const holder = getEl("leaderboard-list");
+    if (!holder) return;
+
+    holder.innerHTML = "";
+    for (let i = 0; i < 5; i += 1) {
+        const skeleton = document.createElement("div");
+        skeleton.className = "leaderboard-skeleton";
+        holder.appendChild(skeleton);
+    }
+
+    const updated = getEl("leaderboard-updated");
+    if (updated) updated.textContent = "Updating...";
+}
+
+function updateLeaderboardUpdatedAt(status = "updated") {
+    const updated = getEl("leaderboard-updated");
+    if (!updated) return;
+
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mm = String(now.getMinutes()).padStart(2, "0");
+
+    if (status === "error") {
+        updated.textContent = `Update failed ${hh}:${mm}`;
+        return;
+    }
+    updated.textContent = `Updated ${hh}:${mm}`;
+}
+
+function formatElapsedMs(ms) {
+    const safeMs = Math.max(0, Number(ms) || 0);
+    const totalSeconds = Math.floor(safeMs / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function renderLobbyElapsed() {
+    const el = getEl("lobby-elapsed");
+    if (!el) return;
+    if (!lobbyStartedAtMs) {
+        el.textContent = "00:00";
+        return;
+    }
+    el.textContent = formatElapsedMs(Date.now() - lobbyStartedAtMs);
+}
+
+function startLobbyElapsedTimer() {
+    stopLobbyElapsedTimer();
+    lobbyStartedAtMs = Date.now();
+    renderLobbyElapsed();
+    lobbyElapsedTimer = setInterval(renderLobbyElapsed, 1000);
+}
+
+function stopLobbyElapsedTimer() {
+    if (lobbyElapsedTimer) clearInterval(lobbyElapsedTimer);
+    lobbyElapsedTimer = null;
+    lobbyStartedAtMs = null;
+    renderLobbyElapsed();
 }
 
 async function ensureGoogleAuth() {
@@ -388,17 +452,22 @@ async function refreshLeaderboard() {
     const holder = getEl("leaderboard-list");
     if (!holder) return;
 
+    setLeaderboardLoading();
+
     try {
         const response = await fetch(`${SERVER_URL}/api/leaderboard?limit=10`);
         if (!response.ok) {
             renderLeaderboard([], "Leaderboard unavailable.");
+            updateLeaderboardUpdatedAt("error");
             return;
         }
         const payload = await response.json();
         renderLeaderboard(payload.leaderboard || [], "No rated players yet.");
+        updateLeaderboardUpdatedAt("ok");
     } catch (error) {
         console.error("[Online] leaderboard failed:", error);
         renderLeaderboard([], "Leaderboard unavailable.");
+        updateLeaderboardUpdatedAt("error");
     }
 }
 
@@ -416,21 +485,51 @@ function renderLeaderboard(items, emptyMessage) {
     }
 
     items.forEach((item) => {
+        const rankValue = Number(item.rank) || 0;
+        const topClass =
+            rankValue === 1
+                ? " leaderboard-row--top1"
+                : rankValue === 2
+                  ? " leaderboard-row--top2"
+                  : rankValue === 3
+                    ? " leaderboard-row--top3"
+                    : "";
+
         const row = document.createElement("div");
-        row.className = "leaderboard-row";
+        row.className = `leaderboard-row${topClass}`;
+
         const rank = document.createElement("span");
         rank.className = "leaderboard-rank";
-        rank.textContent = `#${item.rank}`;
+        rank.textContent =
+            rankValue === 1
+                ? "🥇 #1"
+                : rankValue === 2
+                  ? "🥈 #2"
+                  : rankValue === 3
+                    ? "🥉 #3"
+                    : `#${rankValue}`;
+
+        const main = document.createElement("div");
+        main.className = "leaderboard-main";
 
         const name = document.createElement("span");
         name.className = "leaderboard-name";
         name.textContent = String(item.displayName || "Player");
 
+        const sub = document.createElement("span");
+        sub.className = "leaderboard-sub";
+        const gamesPlayed = Number.isFinite(item.gamesPlayed)
+            ? item.gamesPlayed
+            : 0;
+        sub.textContent = `${gamesPlayed} games`;
+
+        main.append(name, sub);
+
         const rating = document.createElement("span");
         rating.className = "leaderboard-rating";
         rating.textContent = String(item.rating ?? "-");
 
-        row.append(rank, name, rating);
+        row.append(rank, main, rating);
         holder.appendChild(row);
     });
 }
@@ -635,6 +734,7 @@ function endOnlineMatchToMenu(message, winnerColor) {
 function showLobbyScreen(timeControlId) {
     const lobby = getEl("lobby-screen");
     if (lobby) lobby.hidden = false;
+    startLobbyElapsedTimer();
 
     const menu = getEl("game-menu");
     if (menu) menu.hidden = true;
@@ -649,6 +749,7 @@ function showLobbyScreen(timeControlId) {
 function hideLobbyScreen() {
     const lobby = getEl("lobby-screen");
     if (lobby) lobby.hidden = true;
+    stopLobbyElapsedTimer();
 }
 
 function showOnlineError(msg) {

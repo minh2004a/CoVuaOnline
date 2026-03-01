@@ -26,6 +26,7 @@ let firebaseAuthInstance = null;
 let firebaseCurrentUser = null;
 let currentIdToken = null;
 let pendingQueuePayload = null;
+let firebaseInitPromise = null;
 
 const ONLINE_TIME_CONTROLS = Object.freeze({
     "10|0": Object.freeze({
@@ -79,61 +80,81 @@ function setOnlineTimeControlSelection(timeControlId) {
 }
 
 async function ensureGoogleAuth() {
-    if (firebaseInitialized) return firebaseAuthReady;
-    firebaseInitialized = true;
+    if (firebaseAuthReady && firebaseAuthInstance) return true;
+    if (firebaseInitPromise) return firebaseInitPromise;
 
-    if (!window.firebase) {
-        firebaseAuthReady = false;
-        showOnlineError("Firebase SDK missing. Cannot use Google sign-in.");
-        return false;
-    }
+    firebaseInitPromise = (async () => {
+        firebaseInitialized = true;
 
-    try {
-        const response = await fetch(`${SERVER_URL}/api/client-config`);
-        const payload = await response.json();
-
-        if (!payload?.enabled || !payload?.config) {
+        if (!window.firebase) {
             firebaseAuthReady = false;
-            updateAuthPanels(false);
-            renderLeaderboard([], "Auth is not configured on server.");
+            firebaseInitialized = false;
+            showOnlineError("Firebase SDK missing. Cannot use Google sign-in.");
             return false;
         }
 
-        if (!window.firebase.apps.length) {
-            window.firebase.initializeApp(payload.config);
-        }
+        try {
+            const response = await fetch(`${SERVER_URL}/api/client-config`);
+            const payload = await response.json();
 
-        firebaseAuthInstance = window.firebase.auth();
-        firebaseAuthReady = true;
-
-        firebaseAuthInstance.onAuthStateChanged(async (user) => {
-            firebaseCurrentUser = user || null;
-            if (!user) {
-                currentIdToken = null;
-                myRating = null;
-                socketAuthed = false;
-                if (socket && socket.connected) socket.disconnect();
+            if (!payload?.enabled || !payload?.config) {
+                firebaseAuthReady = false;
+                firebaseInitialized = false;
                 updateAuthPanels(false);
-                await refreshLeaderboard();
-                return;
+                renderLeaderboard([], "Auth is not configured on server.");
+                return false;
             }
 
-            currentIdToken = await user.getIdToken();
-            updateAuthPanels(true, user);
-            connectSocket();
-            if (socket && socket.connected) {
-                socket.emit("authenticate", { idToken: currentIdToken });
+            if (!window.firebase.apps.length) {
+                window.firebase.initializeApp(payload.config);
             }
-            await refreshLeaderboard();
-        });
 
-        updateAuthPanels(Boolean(firebaseAuthInstance.currentUser), firebaseAuthInstance.currentUser);
-        return true;
-    } catch (error) {
-        firebaseAuthReady = false;
-        showOnlineError("Cannot initialize Google auth.");
-        console.error("[Online] auth init failed:", error);
-        return false;
+            firebaseAuthInstance = window.firebase.auth();
+            firebaseAuthReady = false;
+            // Make sure we only attach this listener once across retries.
+            if (!firebaseAuthInstance.__codexBound) {
+                firebaseAuthInstance.__codexBound = true;
+                firebaseAuthInstance.onAuthStateChanged(async (user) => {
+                    firebaseCurrentUser = user || null;
+                    if (!user) {
+                        currentIdToken = null;
+                        myRating = null;
+                        socketAuthed = false;
+                        if (socket && socket.connected) socket.disconnect();
+                        updateAuthPanels(false);
+                        await refreshLeaderboard();
+                        return;
+                    }
+
+                    currentIdToken = await user.getIdToken();
+                    updateAuthPanels(true, user);
+                    connectSocket();
+                    if (socket && socket.connected) {
+                        socket.emit("authenticate", { idToken: currentIdToken });
+                    }
+                    await refreshLeaderboard();
+                });
+            }
+
+            firebaseAuthReady = true;
+            updateAuthPanels(
+                Boolean(firebaseAuthInstance.currentUser),
+                firebaseAuthInstance.currentUser,
+            );
+            return true;
+        } catch (error) {
+            firebaseAuthReady = false;
+            firebaseInitialized = false;
+            showOnlineError("Cannot initialize Google auth.");
+            console.error("[Online] auth init failed:", error);
+            return false;
+        }
+    })();
+
+    try {
+        return await firebaseInitPromise;
+    } finally {
+        firebaseInitPromise = null;
     }
 }
 

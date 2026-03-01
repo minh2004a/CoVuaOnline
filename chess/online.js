@@ -17,6 +17,9 @@ let myOnlineColor = null;
 let opponentName = null;
 let drawOfferPending = false;
 let drawRequestSent = false;
+const DRAW_OFFER_COOLDOWN_MS = 8000;
+let drawOfferCooldownUntilMs = 0;
+let drawOfferCooldownTimer = null;
 let awaitingMoveAck = false;
 let myRating = null;
 
@@ -304,6 +307,7 @@ function connectSocket() {
             myOnlineColor = color;
             opponentName = opName;
             drawRequestSent = false;
+            resetDrawOfferCooldown();
             awaitingMoveAck = false;
             setDrawOfferButtonPending(false);
 
@@ -669,12 +673,71 @@ function resignOnline() {
     socket.emit("resign", { roomId: onlineRoomId });
 }
 
+function getDrawOfferCooldownRemainingSeconds() {
+    const remainingMs = drawOfferCooldownUntilMs - Date.now();
+    if (remainingMs <= 0) return 0;
+    return Math.ceil(remainingMs / 1000);
+}
+
+function stopDrawOfferCooldownTicker() {
+    if (!drawOfferCooldownTimer) return;
+    clearInterval(drawOfferCooldownTimer);
+    drawOfferCooldownTimer = null;
+}
+
+function refreshDrawOfferCooldownTicker() {
+    if (getDrawOfferCooldownRemainingSeconds() <= 0) {
+        stopDrawOfferCooldownTicker();
+        return;
+    }
+    if (drawOfferCooldownTimer) return;
+    drawOfferCooldownTimer = setInterval(() => {
+        if (getDrawOfferCooldownRemainingSeconds() <= 0) {
+            drawOfferCooldownUntilMs = 0;
+        }
+        setDrawOfferButtonPending(drawRequestSent);
+    }, 1000);
+}
+
+function renderOnlineActionHint(isPending, cooldownSeconds) {
+    const hintEl = getEl("online-actions-hint");
+    if (!hintEl) return;
+
+    if (isPending && cooldownSeconds > 0) {
+        hintEl.textContent = `Draw offer sent. Retry in ${cooldownSeconds}s if needed.`;
+        return;
+    }
+    if (isPending) {
+        hintEl.textContent = "Draw offer sent. Waiting for opponent response.";
+        return;
+    }
+    if (cooldownSeconds > 0) {
+        hintEl.textContent = `Draw cooldown: ${cooldownSeconds}s.`;
+        return;
+    }
+    hintEl.textContent = "Draw requests use a short cooldown to avoid spam.";
+}
+
+function startDrawOfferCooldown() {
+    drawOfferCooldownUntilMs = Date.now() + DRAW_OFFER_COOLDOWN_MS;
+    setDrawOfferButtonPending(drawRequestSent);
+}
+
+function resetDrawOfferCooldown() {
+    drawOfferCooldownUntilMs = 0;
+    stopDrawOfferCooldownTicker();
+    setDrawOfferButtonPending(drawRequestSent);
+}
+
 function offerDrawOnline() {
     if (!socket || !onlineRoomId) return;
-    if (drawRequestSent) return;
+    if (drawRequestSent || getDrawOfferCooldownRemainingSeconds() > 0) {
+        setDrawOfferButtonPending(drawRequestSent);
+        return;
+    }
 
     drawRequestSent = true;
-    setDrawOfferButtonPending(true);
+    startDrawOfferCooldown();
     socket.emit("offer_draw", { roomId: onlineRoomId });
     showOnlineNotification("Draw offer sent.", "info");
 }
@@ -707,14 +770,29 @@ function resetOnlineState() {
     drawOfferPending = false;
     drawRequestSent = false;
     awaitingMoveAck = false;
-    setDrawOfferButtonPending(false);
+    resetDrawOfferCooldown();
 }
 
 function setDrawOfferButtonPending(isPending) {
+    const pending = !!isPending;
+    const cooldownSeconds = getDrawOfferCooldownRemainingSeconds();
+    const onCooldown = cooldownSeconds > 0;
     const btn = getEl("btn-offer-draw");
-    if (!btn) return;
-    btn.disabled = !!isPending;
-    btn.textContent = isPending ? "Draw offer sent" : "Offer draw";
+    if (btn) {
+        btn.disabled = pending || onCooldown;
+        btn.classList.toggle("btn--cooldown", onCooldown);
+        if (pending && onCooldown) {
+            btn.textContent = `Draw sent (${cooldownSeconds}s)`;
+        } else if (pending) {
+            btn.textContent = "Draw offer sent";
+        } else if (onCooldown) {
+            btn.textContent = `Offer draw (${cooldownSeconds}s)`;
+        } else {
+            btn.textContent = "Offer draw";
+        }
+    }
+    renderOnlineActionHint(pending, cooldownSeconds);
+    refreshDrawOfferCooldownTicker();
 }
 
 function endOnlineMatchToMenu(message, winnerColor) {

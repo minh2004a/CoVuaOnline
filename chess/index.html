@@ -60,13 +60,37 @@
                             ↩ Hoàn tác
                         </button>
                     </div>
-                    <div class="btn-group" id="online-actions" hidden>
-                        <button class="btn btn--secondary" id="btn-offer-draw">
-                            🤝 Yêu cầu hòa
-                        </button>
-                        <button class="btn btn--primary" id="btn-resign">
-                            🏳 Đầu hàng
-                        </button>
+                    <div
+                        class="btn-group online-action-cluster"
+                        id="online-actions"
+                        hidden
+                    >
+                        <div class="online-action-cluster__title">
+                            Trong trận online
+                        </div>
+                        <div class="online-action-cluster__row">
+                            <button
+                                class="btn btn--secondary"
+                                id="btn-offer-draw"
+                                type="button"
+                            >
+                                🤝 Yêu cầu hòa
+                            </button>
+                            <button
+                                class="btn btn--danger"
+                                id="btn-resign"
+                                type="button"
+                            >
+                                🏳 Đầu hàng
+                            </button>
+                        </div>
+                        <p
+                            class="online-action-cluster__hint"
+                            id="online-actions-hint"
+                            aria-live="polite"
+                        >
+                            Nút hòa có cooldown ngắn để tránh bấm nhầm.
+                        </p>
                     </div>
 
                     <!-- Captured pieces WHITE captured -->

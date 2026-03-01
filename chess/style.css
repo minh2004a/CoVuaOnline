@@ -20,6 +20,9 @@
     --gold: #d4a843;
     --gold-light: #f0c060;
     --gold-dim: rgba(212, 168, 67, 0.15);
+    --danger: #ef4444;
+    --danger-strong: #dc2626;
+    --danger-soft: rgba(239, 68, 68, 0.18);
 
     --text: #e8eaf0;
     --text-dim: #8892aa;
@@ -251,6 +254,51 @@ body {
 .btn--secondary:hover {
     border-color: var(--gold);
     color: var(--gold);
+}
+
+.btn--danger {
+    background: linear-gradient(135deg, var(--danger), var(--danger-strong));
+    color: #fff;
+}
+.btn--danger:hover {
+    box-shadow: 0 8px 20px rgba(220, 38, 38, 0.4);
+}
+
+.online-action-cluster {
+    background: linear-gradient(165deg, rgba(44, 51, 70, 0.94), rgba(31, 37, 50, 0.95));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px;
+    gap: 10px;
+}
+
+.online-action-cluster__title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.online-action-cluster__row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.online-action-cluster__row .btn {
+    width: 100%;
+}
+
+.online-action-cluster__hint {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-align: center;
+    min-height: 17px;
+}
+
+#btn-offer-draw.btn--cooldown {
+    filter: saturate(0.6);
 }
 
 /* ================================
@@ -638,6 +686,9 @@ body {
 @media (max-width: 600px) {
     .side-panel {
         gap: 8px;
+    }
+    .online-action-cluster__row {
+        grid-template-columns: 1fr;
     }
     .btn {
         padding: 8px 12px;

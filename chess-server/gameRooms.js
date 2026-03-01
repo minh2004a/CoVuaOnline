@@ -7,6 +7,10 @@
  *   userId,
  *   name,
  *   rating,
+ *   timeControlId,
+ *   timeControlLabel,
+ *   baseSeconds,
+ *   incrementSeconds,
  *   queuedAt
  * }
  */
@@ -16,6 +20,38 @@ const DEFAULT_QUEUE_RATING = 300;
 const DEFAULT_BASE_RATING_GAP = 10;
 const DEFAULT_GAP_GROWTH_PER_SECOND = 3;
 const DEFAULT_MAX_RATING_GAP = 500;
+const DEFAULT_TIME_CONTROL_ID = "10|0";
+const RANKED_TIME_CONTROLS = Object.freeze({
+    "10|0": Object.freeze({
+        id: "10|0",
+        label: "10|0",
+        baseSeconds: 10 * 60,
+        incrementSeconds: 0,
+    }),
+    "15|5": Object.freeze({
+        id: "15|5",
+        label: "15|5",
+        baseSeconds: 15 * 60,
+        incrementSeconds: 5,
+    }),
+});
+
+function normalizeTimeControlId(value) {
+    if (typeof value !== "string") return DEFAULT_TIME_CONTROL_ID;
+    const normalized = value.trim();
+    if (!normalized) return DEFAULT_TIME_CONTROL_ID;
+    return Object.prototype.hasOwnProperty.call(
+        RANKED_TIME_CONTROLS,
+        normalized,
+    )
+        ? normalized
+        : DEFAULT_TIME_CONTROL_ID;
+}
+
+function getTimeControlConfig(value) {
+    const id = normalizeTimeControlId(value);
+    return RANKED_TIME_CONTROLS[id];
+}
 
 function parsePositiveNumber(value, fallback) {
     const parsed = Number(value);
@@ -48,6 +84,10 @@ const MATCH_MAX_RATING_GAP = parsePositiveNumber(
  *   blackName,
  *   whiteRating,
  *   blackRating,
+ *   timeControlId,
+ *   timeControlLabel,
+ *   baseSeconds,
+ *   incrementSeconds,
  *   createdAt
  * }
  */
@@ -58,6 +98,7 @@ const playerRoom = new Map();
 
 function joinQueue(player) {
     if (!player?.socketId || !player?.userId) return false;
+    const timeControl = getTimeControlConfig(player.timeControlId);
 
     const duplicatedSocket = queue.some(
         (item) => item.socketId === player.socketId,
@@ -65,16 +106,22 @@ function joinQueue(player) {
     const duplicatedUser = queue.some((item) => item.userId === player.userId);
     if (duplicatedSocket || duplicatedUser) return false;
 
-    queue.push({
+    const queuedPlayer = {
         socketId: player.socketId,
         userId: player.userId,
         name: player.name || "Player",
         rating: Number.isFinite(player.rating)
             ? player.rating
             : DEFAULT_QUEUE_RATING,
+        timeControlId: timeControl.id,
+        timeControlLabel: timeControl.label,
+        baseSeconds: timeControl.baseSeconds,
+        incrementSeconds: timeControl.incrementSeconds,
         queuedAt: Date.now(),
-    });
-    return true;
+    };
+
+    queue.push(queuedPlayer);
+    return queuedPlayer;
 }
 
 function leaveQueue(socketId) {
@@ -100,6 +147,7 @@ function tryMatch() {
 
         for (let j = i + 1; j < queue.length; j += 1) {
             const candidate = queue[j];
+            if (candidate.timeControlId !== seeker.timeControlId) continue;
             const diff = Math.abs(seeker.rating - candidate.rating);
             const candidateGap = currentAllowedGap(candidate, now);
 
@@ -126,6 +174,10 @@ function tryMatch() {
             blackName: black.name,
             whiteRating: white.rating,
             blackRating: black.rating,
+            timeControlId: white.timeControlId,
+            timeControlLabel: white.timeControlLabel,
+            baseSeconds: white.baseSeconds,
+            incrementSeconds: white.incrementSeconds,
             createdAt: Date.now(),
         };
 

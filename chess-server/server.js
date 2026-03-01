@@ -78,6 +78,10 @@ function defaultGameOverMessage(reason, room, winner) {
         const winnerName = winner === "w" ? room.whiteName : room.blackName;
         return `${winnerName} wins by resignation.`;
     }
+    if (reason === "timeout") {
+        const winnerName = winner === "w" ? room.whiteName : room.blackName;
+        return `${winnerName} wins on time.`;
+    }
     if (reason === "draw") {
         return "Draw agreed.";
     }
@@ -208,6 +212,12 @@ async function startMatchFromQueueEntry(match) {
         opponentName: black.name,
         myRating: white.rating,
         opponentRating: black.rating,
+        timeControl: {
+            id: room.timeControlId,
+            label: room.timeControlLabel,
+            baseSeconds: room.baseSeconds,
+            incrementSeconds: room.incrementSeconds,
+        },
     });
 
     io.to(black.socketId).emit("game_start", {
@@ -216,10 +226,16 @@ async function startMatchFromQueueEntry(match) {
         opponentName: white.name,
         myRating: black.rating,
         opponentRating: white.rating,
+        timeControl: {
+            id: room.timeControlId,
+            label: room.timeControlLabel,
+            baseSeconds: room.baseSeconds,
+            incrementSeconds: room.incrementSeconds,
+        },
     });
 
     console.log(
-        `[MATCH] ${roomId}: ${room.whiteName} (W ${room.whiteRating}) vs ${room.blackName} (B ${room.blackRating})`,
+        `[MATCH] ${roomId} [${room.timeControlId}]: ${room.whiteName} (W ${room.whiteRating}) vs ${room.blackName} (B ${room.blackRating})`,
     );
 }
 
@@ -276,7 +292,7 @@ io.on("connection", (socket) => {
         }
     });
 
-    socket.on("join_queue", async () => {
+    socket.on("join_queue", async ({ timeControlId } = {}) => {
         const user = socketUsers.get(socket.id);
         if (!user) {
             socket.emit("auth_required", "Please sign in with Google first.");
@@ -293,6 +309,7 @@ io.on("connection", (socket) => {
             userId: user.id,
             name: user.displayName,
             rating: user.rating,
+            timeControlId,
         });
 
         if (!added) {
@@ -305,6 +322,7 @@ io.on("connection", (socket) => {
 
         socket.emit("queue_joined", {
             position: getQueuePosition(socket.id),
+            timeControlId: added.timeControlId,
         });
 
         await processMatchmakingQueue();
@@ -369,6 +387,24 @@ io.on("connection", (socket) => {
             winner,
             result: resultFromWinner(winner),
             reason: "resign",
+        });
+    });
+
+    socket.on("timeout_loss", async ({ roomId, loser } = {}) => {
+        const room = getRoom(roomId);
+        if (!room || !isPlayerInRoom(roomId, socket.id)) return;
+
+        const senderColor = room.whiteSocketId === socket.id ? "w" : "b";
+        if (loser && loser !== senderColor) {
+            socket.emit("error_msg", "Invalid timeout payload.");
+            return;
+        }
+
+        const winner = senderColor === "w" ? "b" : "w";
+        await concludeMatch(roomId, {
+            winner,
+            result: resultFromWinner(winner),
+            reason: "timeout",
         });
     });
 

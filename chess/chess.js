@@ -85,6 +85,8 @@ const TIME_CONTROLS = {
 };
 
 let selectedTimeControl = 0; // seconds per side (0 = unlimited)
+let selectedTimeIncrement = 0; // increment seconds per move
+let onlineTimeControlLabel = null;
 
 // ================================================
 // CHESS CLOCK MODULE
@@ -92,6 +94,7 @@ let selectedTimeControl = 0; // seconds per side (0 = unlimited)
 const ChessClock = (() => {
     let timeW = 0; // ms remaining for white
     let timeB = 0; // ms remaining for black
+    let incrementMs = 0;
     let active = null; // COLOR.W | COLOR.B | null
     let intervalId = null;
     let lastTick = null;
@@ -166,16 +169,27 @@ const ChessClock = (() => {
         renderClocks();
     }
 
-    function reset(seconds) {
+    function reset(seconds, incrementSeconds = 0) {
         stop();
         const ms = seconds * 1000;
         timeW = ms;
         timeB = ms;
+        incrementMs = Math.max(0, Number(incrementSeconds) || 0) * 1000;
         const show = seconds > 0;
         const cardW = document.getElementById("clock-white");
         const cardB = document.getElementById("clock-black");
         if (cardW) cardW.hidden = !show;
         if (cardB) cardB.hidden = !show;
+        renderClocks();
+    }
+
+    function applyIncrement(color) {
+        if (!incrementMs || color === null || color === undefined) return;
+        if (color === COLOR.W) {
+            timeW += incrementMs;
+        } else if (color === COLOR.B) {
+            timeB += incrementMs;
+        }
         renderClocks();
     }
 
@@ -190,15 +204,38 @@ const ChessClock = (() => {
         return selectedTimeControl === 0;
     }
 
-    return { start, stop, reset, switchTo, renderClocks, isUnlimited };
+    return {
+        start,
+        stop,
+        reset,
+        switchTo,
+        applyIncrement,
+        renderClocks,
+        isUnlimited,
+    };
 })();
 
 function onTimeout(loserColor) {
+    if (gameMode === "online") {
+        const myColor =
+            typeof myOnlineColor === "string" ? myOnlineColor : null;
+        if (myColor && loserColor !== myColor) {
+            // In online mode, only the player who flags should report timeout.
+            return;
+        }
+    }
+
     state.gameOver = true;
     state.winner = enemy(loserColor);
     render();
     showGameOver("timeout", loserColor);
     ChessSounds.checkmate();
+    if (
+        gameMode === "online" &&
+        typeof reportTimeoutOnline === "function"
+    ) {
+        reportTimeoutOnline(loserColor);
+    }
 }
 
 // ================================================
@@ -688,6 +725,7 @@ function executeMove(move, promoType) {
 
     // Switch the chess clock
     if (!ChessClock.isUnlimited() && !state.gameOver) {
+        ChessClock.applyIncrement(color);
         ChessClock.switchTo(state.turn);
     }
 
@@ -929,6 +967,9 @@ function renderModeBadge() {
     if (gameMode === "pvp") {
         badge.textContent = "👥 2 Người";
     } else if (gameMode === "online") {
+        const tcLabel = onlineTimeControlLabel
+            ? ` ${onlineTimeControlLabel}`
+            : "";
         const colorLabel =
             typeof myOnlineColor !== "undefined" && myOnlineColor
                 ? myOnlineColor === "w"
@@ -939,7 +980,7 @@ function renderModeBadge() {
             typeof opponentName !== "undefined" && opponentName
                 ? ` vs ${opponentName}`
                 : "";
-        badge.textContent = `🌐 Online — ${colorLabel}${opp}`;
+        badge.textContent = `🌐 Online${tcLabel} — ${colorLabel}${opp}`;
     } else {
         badge.textContent = `🤖 vs AI — ${DIFFICULTY_LABELS[aiDifficulty] || ""}`;
     }
@@ -1130,6 +1171,8 @@ function showGameOver(reason, loserColor) {
 // ================================================
 function newGame() {
     boardFlipped = false;
+    selectedTimeIncrement = 0;
+    onlineTimeControlLabel = null;
     ChessClock.stop();
     initState();
     selectedSq = null;
@@ -1240,6 +1283,8 @@ function startGame(mode, difficulty, timeSeconds) {
     gameMode = mode;
     aiDifficulty = difficulty;
     selectedTimeControl = timeSeconds ?? 0;
+    selectedTimeIncrement = 0;
+    onlineTimeControlLabel = null;
     hideGameMenu();
     initState();
     selectedSq = null;
@@ -1250,7 +1295,7 @@ function startGame(mode, difficulty, timeSeconds) {
     document.getElementById("gameover-modal").hidden = true;
     document.getElementById("promotion-modal").hidden = true;
     // Initialise clock
-    ChessClock.reset(selectedTimeControl);
+    ChessClock.reset(selectedTimeControl, selectedTimeIncrement);
     if (selectedTimeControl > 0) {
         ChessClock.start(COLOR.W); // White always moves first
     }
@@ -1263,11 +1308,25 @@ function startGame(mode, difficulty, timeSeconds) {
  * Start an online game. Called by online.js when server signals game_start.
  * @param {string} myColor - "w" or "b"
  * @param {string} opponentNameStr - opponent display name
+ * @param {{label?: string, baseSeconds?: number, incrementSeconds?: number}} timeControl
  */
-function startOnlineGame(myColor, opponentNameStr) {
+function startOnlineGame(myColor, opponentNameStr, timeControl) {
     gameMode = "online";
     aiDifficulty = null;
-    selectedTimeControl = 0; // Online games are unlimited for now
+    const baseSeconds = Number.isFinite(timeControl?.baseSeconds)
+        ? Math.max(0, Math.trunc(timeControl.baseSeconds))
+        : 0;
+    const incrementSeconds = Number.isFinite(timeControl?.incrementSeconds)
+        ? Math.max(0, Math.trunc(timeControl.incrementSeconds))
+        : 0;
+    selectedTimeControl = baseSeconds;
+    selectedTimeIncrement = incrementSeconds;
+    onlineTimeControlLabel =
+        typeof timeControl?.label === "string" && timeControl.label.trim()
+            ? timeControl.label.trim()
+            : baseSeconds > 0
+              ? `${Math.round(baseSeconds / 60)}|${incrementSeconds}`
+              : null;
     boardFlipped = myColor === "b";
     hideGameMenu();
     initState();
@@ -1276,16 +1335,20 @@ function startOnlineGame(myColor, opponentNameStr) {
     lastMove = null;
     pendingPromo = null;
     aiThinking = false;
-    ChessClock.reset(0); // No clock in online mode
+    ChessClock.reset(selectedTimeControl, selectedTimeIncrement);
+    if (selectedTimeControl > 0) {
+        ChessClock.start(COLOR.W);
+    }
     document.getElementById("gameover-modal").hidden = true;
     document.getElementById("promotion-modal").hidden = true;
     render();
     ChessSounds.gameStart();
 
     const colorName = myColor === "w" ? "Trắng" : "Đen";
+    const tcLabel = onlineTimeControlLabel || "Unlimited";
     if (typeof showOnlineNotification === "function") {
         showOnlineNotification(
-            `🌐 Bạn chơi quân ${colorName} vs ${opponentNameStr || "Đối thủ"}`,
+            `🌐 Bạn chơi quân ${colorName} vs ${opponentNameStr || "Đối thủ"} (${tcLabel})`,
             "info",
         );
     }

@@ -260,6 +260,30 @@
                                 <span id="online-user-rating">Elo: 300</span>
                             </div>
                         </div>
+                        <div class="online-time-control">
+                            <span class="online-time-title">Time Control</span>
+                            <div class="online-time-options">
+                                <button
+                                    class="online-time-btn online-time-btn--active"
+                                    type="button"
+                                    data-online-time="10|0"
+                                    aria-pressed="true"
+                                >
+                                    10|0
+                                </button>
+                                <button
+                                    class="online-time-btn"
+                                    type="button"
+                                    data-online-time="15|5"
+                                    aria-pressed="false"
+                                >
+                                    15|5
+                                </button>
+                            </div>
+                            <span class="online-time-selected" id="online-selected-time"
+                                >Time: 10|0</span
+                            >
+                        </div>
                         <div class="online-auth-actions">
                             <button
                                 class="btn btn--primary"
@@ -299,7 +323,7 @@
                     <div class="lobby-spinner"></div>
                 </div>
                 <h2 class="lobby-title">Đang tìm đối thủ...</h2>
-                <p class="lobby-sub">Vui lòng chờ trong giây lát</p>
+                <p class="lobby-sub" id="lobby-time-control">Ranked 10|0</p>
                 <button class="btn btn--secondary" id="btn-cancel-queue">
                     ✕ Hủy tìm trận
                 </button>

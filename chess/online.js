@@ -25,9 +25,57 @@ let firebaseAuthReady = false;
 let firebaseAuthInstance = null;
 let firebaseCurrentUser = null;
 let currentIdToken = null;
+let pendingQueuePayload = null;
+
+const ONLINE_TIME_CONTROLS = Object.freeze({
+    "10|0": Object.freeze({
+        id: "10|0",
+        label: "10|0",
+        baseSeconds: 10 * 60,
+        incrementSeconds: 0,
+    }),
+    "15|5": Object.freeze({
+        id: "15|5",
+        label: "15|5",
+        baseSeconds: 15 * 60,
+        incrementSeconds: 5,
+    }),
+});
+const DEFAULT_ONLINE_TIME_CONTROL_ID = "10|0";
+let selectedOnlineTimeControlId = DEFAULT_ONLINE_TIME_CONTROL_ID;
 
 function getEl(id) {
     return document.getElementById(id);
+}
+
+function normalizeOnlineTimeControlId(value) {
+    if (typeof value !== "string") return DEFAULT_ONLINE_TIME_CONTROL_ID;
+    const normalized = value.trim();
+    if (!normalized) return DEFAULT_ONLINE_TIME_CONTROL_ID;
+    return Object.prototype.hasOwnProperty.call(ONLINE_TIME_CONTROLS, normalized)
+        ? normalized
+        : DEFAULT_ONLINE_TIME_CONTROL_ID;
+}
+
+function getOnlineTimeControl(timeControlId) {
+    const id = normalizeOnlineTimeControlId(timeControlId);
+    return ONLINE_TIME_CONTROLS[id];
+}
+
+function setOnlineTimeControlSelection(timeControlId) {
+    const normalized = normalizeOnlineTimeControlId(timeControlId);
+    selectedOnlineTimeControlId = normalized;
+
+    document.querySelectorAll("[data-online-time]").forEach((btn) => {
+        const active = btn.dataset.onlineTime === normalized;
+        btn.classList.toggle("online-time-btn--active", active);
+        btn.setAttribute("aria-pressed", active ? "true" : "false");
+    });
+
+    const selectedEl = getEl("online-selected-time");
+    if (selectedEl) {
+        selectedEl.textContent = `Time: ${getOnlineTimeControl(normalized).label}`;
+    }
 }
 
 async function ensureGoogleAuth() {
@@ -123,13 +171,18 @@ function connectSocket() {
 
         if (pendingQueueJoin) {
             pendingQueueJoin = false;
-            socket.emit("join_queue");
+            const payload = pendingQueuePayload || {
+                timeControlId: selectedOnlineTimeControlId,
+            };
+            pendingQueuePayload = null;
+            socket.emit("join_queue", payload);
         }
     });
 
     socket.on("auth_error", (msg) => {
         socketAuthed = false;
         pendingQueueJoin = false;
+        pendingQueuePayload = null;
         hideLobbyScreen();
         showOnlineError(msg || "Authentication failed.");
     });
@@ -137,35 +190,54 @@ function connectSocket() {
     socket.on("auth_required", (msg) => {
         socketAuthed = false;
         pendingQueueJoin = false;
+        pendingQueuePayload = null;
         hideLobbyScreen();
         showOnlineError(msg || "Google sign-in required.");
     });
 
-    socket.on("queue_joined", () => {
-        showLobbyScreen();
+    socket.on("queue_joined", ({ timeControlId } = {}) => {
+        setOnlineTimeControlSelection(timeControlId || selectedOnlineTimeControlId);
+        showLobbyScreen(selectedOnlineTimeControlId);
     });
 
     socket.on("queue_cancelled", () => {
+        pendingQueuePayload = null;
         hideLobbyScreen();
     });
 
-    socket.on("game_start", ({ roomId, color, opponentName: opName, myRating: freshRating }) => {
-        onlineRoomId = roomId;
-        myOnlineColor = color;
-        opponentName = opName;
-        drawRequestSent = false;
-        gameOverReported = false;
-        setDrawOfferButtonPending(false);
+    socket.on(
+        "game_start",
+        ({
+            roomId,
+            color,
+            opponentName: opName,
+            myRating: freshRating,
+            timeControl,
+        }) => {
+            onlineRoomId = roomId;
+            myOnlineColor = color;
+            opponentName = opName;
+            drawRequestSent = false;
+            gameOverReported = false;
+            setDrawOfferButtonPending(false);
 
-        if (Number.isFinite(freshRating)) {
-            myRating = freshRating;
-            updateAuthPanels(true, firebaseCurrentUser, { rating: myRating });
-        }
+            const appliedTimeControl = timeControl?.id
+                ? getOnlineTimeControl(timeControl.id)
+                : getOnlineTimeControl(selectedOnlineTimeControlId);
+            setOnlineTimeControlSelection(appliedTimeControl.id);
 
-        hideLobbyScreen();
-        startOnlineGame(color, opName);
-        console.log(`[Online] game_start room=${roomId} color=${color}`);
-    });
+            if (Number.isFinite(freshRating)) {
+                myRating = freshRating;
+                updateAuthPanels(true, firebaseCurrentUser, { rating: myRating });
+            }
+
+            hideLobbyScreen();
+            startOnlineGame(color, opName, appliedTimeControl);
+            console.log(
+                `[Online] game_start room=${roomId} color=${color} tc=${appliedTimeControl.id}`,
+            );
+        },
+    );
 
     socket.on("opponent_moved", ({ move, promoType }) => {
         lastMove = move;
@@ -190,7 +262,7 @@ function connectSocket() {
     });
 
     socket.on("game_over", ({ reason, winner, message, ratingUpdate }) => {
-        if (state.gameOver) return;
+        const alreadyOver = state.gameOver;
 
         if (reason === "disconnect") {
             endOnlineMatchToMenu(message, winner || myOnlineColor);
@@ -198,16 +270,18 @@ function connectSocket() {
             return;
         }
 
-        state.gameOver = true;
-        state.winner = winner || null;
-        hideDrawOffer();
+        if (!alreadyOver) {
+            state.gameOver = true;
+            state.winner = winner || null;
+            hideDrawOffer();
 
-        if (reason === "draw") {
-            showOnlineGameOver(null, message || "Draw.");
-        } else if (reason === "disputed") {
-            showOnlineGameOver(null, message || "Result disputed.");
-        } else {
-            showOnlineGameOver(winner || null, message || "Game over.");
+            if (reason === "draw") {
+                showOnlineGameOver(null, message || "Draw.");
+            } else if (reason === "disputed") {
+                showOnlineGameOver(null, message || "Result disputed.");
+            } else {
+                showOnlineGameOver(winner || null, message || "Game over.");
+            }
         }
 
         if (ratingUpdate) applyRatingUpdate(ratingUpdate);
@@ -364,17 +438,22 @@ async function startOnlineMatchmaking() {
 
     connectSocket();
     pendingQueueJoin = true;
+    pendingQueuePayload = {
+        timeControlId: selectedOnlineTimeControlId,
+    };
 
     if (socket && socket.connected) {
         if (!socketAuthed) {
             socket.emit("authenticate", { idToken: currentIdToken });
         } else {
             pendingQueueJoin = false;
-            socket.emit("join_queue");
+            const payload = pendingQueuePayload;
+            pendingQueuePayload = null;
+            socket.emit("join_queue", payload);
         }
     }
 
-    showLobbyScreen();
+    showLobbyScreen(selectedOnlineTimeControlId);
 }
 
 // Backward-compatible entrypoint used by chess.js
@@ -384,6 +463,7 @@ function joinOnlineQueue() {
 
 function cancelQueue() {
     pendingQueueJoin = false;
+    pendingQueuePayload = null;
     if (socket) socket.emit("cancel_queue");
     hideLobbyScreen();
 }
@@ -435,6 +515,21 @@ function notifyGameOverOnline(winner, reason) {
     });
 }
 
+function reportTimeoutOnline(loserColor) {
+    if (!socket || !onlineRoomId || gameOverReported) return;
+    const normalizedLoser = loserColor === "w" || loserColor === "b"
+        ? loserColor
+        : myOnlineColor;
+    if (!normalizedLoser) return;
+    if (myOnlineColor && normalizedLoser !== myOnlineColor) return;
+
+    gameOverReported = true;
+    socket.emit("timeout_loss", {
+        roomId: onlineRoomId,
+        loser: normalizedLoser,
+    });
+}
+
 function resetOnlineState() {
     onlineRoomId = null;
     myOnlineColor = null;
@@ -466,12 +561,18 @@ function endOnlineMatchToMenu(message, winnerColor) {
     if (typeof newGame === "function") newGame();
 }
 
-function showLobbyScreen() {
+function showLobbyScreen(timeControlId) {
     const lobby = getEl("lobby-screen");
     if (lobby) lobby.hidden = false;
 
     const menu = getEl("game-menu");
     if (menu) menu.hidden = true;
+
+    const tc = getOnlineTimeControl(timeControlId || selectedOnlineTimeControlId);
+    const lobbyTc = getEl("lobby-time-control");
+    if (lobbyTc) {
+        lobbyTc.textContent = `Ranked ${tc.label}`;
+    }
 }
 
 function hideLobbyScreen() {
@@ -548,6 +649,14 @@ function bindOnlineUiEvents() {
     if (logoutBtn) {
         logoutBtn.addEventListener("click", signOutGoogle);
     }
+
+    document.querySelectorAll("[data-online-time]").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            setOnlineTimeControlSelection(btn.dataset.onlineTime);
+        });
+    });
+
+    setOnlineTimeControlSelection(selectedOnlineTimeControlId);
 }
 
 bindOnlineUiEvents();

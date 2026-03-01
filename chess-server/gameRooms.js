@@ -13,7 +13,7 @@
 const queue = [];
 
 const DEFAULT_QUEUE_RATING = 300;
-const DEFAULT_BASE_RATING_GAP = 60;
+const DEFAULT_BASE_RATING_GAP = 10;
 const DEFAULT_GAP_GROWTH_PER_SECOND = 3;
 const DEFAULT_MAX_RATING_GAP = 500;
 
@@ -69,7 +69,9 @@ function joinQueue(player) {
         socketId: player.socketId,
         userId: player.userId,
         name: player.name || "Player",
-        rating: Number.isFinite(player.rating) ? player.rating : DEFAULT_QUEUE_RATING,
+        rating: Number.isFinite(player.rating)
+            ? player.rating
+            : DEFAULT_QUEUE_RATING,
         queuedAt: Date.now(),
     });
     return true;
@@ -189,7 +191,8 @@ function currentAllowedGap(player, nowTs) {
     const now = Number.isFinite(nowTs) ? nowTs : Date.now();
     const queuedAt = Number.isFinite(player?.queuedAt) ? player.queuedAt : now;
     const waitedSeconds = Math.max(0, (now - queuedAt) / 1000);
-    const dynamicGap = MATCH_BASE_RATING_GAP + waitedSeconds * MATCH_GAP_GROWTH_PER_SECOND;
+    const dynamicGap =
+        MATCH_BASE_RATING_GAP + waitedSeconds * MATCH_GAP_GROWTH_PER_SECOND;
     return Math.min(MATCH_MAX_RATING_GAP, dynamicGap);
 }
 

@@ -308,7 +308,7 @@ function updateAuthPanels(isLoggedIn, firebaseUser, serverUser) {
         ? serverUser.rating
         : Number.isFinite(myRating)
           ? myRating
-          : 1200;
+          : 300;
     if (userRatingEl) userRatingEl.textContent = `Rating: ${ratingValue}`;
 
     if (userAvatarEl) {

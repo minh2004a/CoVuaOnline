@@ -3,7 +3,7 @@ const path = require("path");
 const sqlite3 = require("sqlite3");
 const { open } = require("sqlite");
 
-const DEFAULT_RATING = 1200;
+const DEFAULT_RATING = 300;
 const ELO_K_FACTOR = 32;
 const DB_FILE =
     process.env.CHESS_DB_PATH ||
@@ -132,10 +132,10 @@ async function upsertGoogleUser(decodedToken) {
         } else {
             await db.run(
                 `
-                    INSERT INTO users (google_uid, email, display_name, photo_url)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO users (google_uid, email, display_name, photo_url, rating)
+                    VALUES (?, ?, ?, ?, ?)
                 `,
-                [uid, email, displayName, photoUrl],
+                [uid, email, displayName, photoUrl, DEFAULT_RATING],
             );
         }
 

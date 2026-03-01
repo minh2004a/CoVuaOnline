@@ -12,9 +12,10 @@
  */
 const queue = [];
 
-const DEFAULT_BASE_RATING_GAP = 100;
-const DEFAULT_GAP_GROWTH_PER_SECOND = 8;
-const DEFAULT_MAX_RATING_GAP = 600;
+const DEFAULT_QUEUE_RATING = 300;
+const DEFAULT_BASE_RATING_GAP = 60;
+const DEFAULT_GAP_GROWTH_PER_SECOND = 3;
+const DEFAULT_MAX_RATING_GAP = 500;
 
 function parsePositiveNumber(value, fallback) {
     const parsed = Number(value);
@@ -68,7 +69,7 @@ function joinQueue(player) {
         socketId: player.socketId,
         userId: player.userId,
         name: player.name || "Player",
-        rating: Number.isFinite(player.rating) ? player.rating : 1200,
+        rating: Number.isFinite(player.rating) ? player.rating : DEFAULT_QUEUE_RATING,
         queuedAt: Date.now(),
     });
     return true;

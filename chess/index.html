@@ -52,12 +52,20 @@
                     <div class="status-banner" id="status-banner"></div>
 
                     <!-- Buttons -->
-                    <div class="btn-group">
+                    <div class="btn-group" id="local-actions">
                         <button class="btn btn--primary" id="btn-new-game">
                             🔄 Ván mới
                         </button>
                         <button class="btn btn--secondary" id="btn-undo">
                             ↩ Hoàn tác
+                        </button>
+                    </div>
+                    <div class="btn-group" id="online-actions" hidden>
+                        <button class="btn btn--secondary" id="btn-offer-draw">
+                            🤝 Yêu cầu hòa
+                        </button>
+                        <button class="btn btn--primary" id="btn-resign">
+                            🏳 Đầu hàng
                         </button>
                     </div>
 
@@ -71,9 +79,33 @@
                     </div>
                 </aside>
 
-                <!-- Chessboard -->
-                <div class="board-wrapper">
-                    <div class="board" id="board"></div>
+                <!-- Chessboard + Clocks -->
+                <div class="board-col">
+                    <!-- Black clock (top) -->
+                    <div class="clock-card" id="clock-black" hidden>
+                        <div class="clock-color-dot clock-dot--black"></div>
+                        <div class="clock-info">
+                            <span class="clock-name">Đen</span>
+                            <span class="clock-time" id="clock-black-time"
+                                >—</span
+                            >
+                        </div>
+                    </div>
+
+                    <div class="board-wrapper">
+                        <div class="board" id="board"></div>
+                    </div>
+
+                    <!-- White clock (bottom) -->
+                    <div class="clock-card" id="clock-white" hidden>
+                        <div class="clock-color-dot clock-dot--white"></div>
+                        <div class="clock-info">
+                            <span class="clock-name">Trắng</span>
+                            <span class="clock-time" id="clock-white-time"
+                                >—</span
+                            >
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Right panel: move history -->
@@ -120,10 +152,40 @@
                         >
                             <span class="btn-icon">🌐</span>
                             Chơi Online
-                            <span class="btn-desc">Tìm trận ngẫu nhiên</span>
+                            <span class="btn-desc">Xếp hạng</span>
                         </button>
                     </div>
                 </div>
+
+                <!-- Step 1b: Choose time control -->
+                <div id="menu-step-time" class="menu-step" hidden>
+                    <div class="menu-logo" id="time-step-logo">⏱ Thời gian</div>
+                    <p class="menu-sub">Chọn thời hạn ván cờ</p>
+                    <div class="time-control-grid">
+                        <button class="time-btn" data-time="60">
+                            ⚡<span>Bullet</span><small>1 phút</small>
+                        </button>
+                        <button class="time-btn" data-time="180">
+                            🔥<span>Blitz</span><small>3 phút</small>
+                        </button>
+                        <button class="time-btn" data-time="300">
+                            ⚡<span>Blitz+</span><small>5 phút</small>
+                        </button>
+                        <button class="time-btn" data-time="600">
+                            🐢<span>Rapid</span><small>10 phút</small>
+                        </button>
+                        <button class="time-btn" data-time="1800">
+                            🏛️<span>Classical</span><small>30 phút</small>
+                        </button>
+                        <button class="time-btn" data-time="0">
+                            ∞<span>Unlimited</span><small>Không giới hạn</small>
+                        </button>
+                    </div>
+                    <button class="menu-back" id="menu-back-time">
+                        ← Quay lại
+                    </button>
+                </div>
+
                 <!-- Step 2: Choose difficulty -->
                 <div id="menu-step-diff" class="menu-step" hidden>
                     <div class="menu-logo">🤖 Chơi với máy</div>
@@ -165,24 +227,67 @@
                     <button class="menu-back" id="menu-back">← Quay lại</button>
                 </div>
 
-                <!-- Step 3: Online name input -->
+                <!-- Step 3: Online ranked -->
                 <div id="menu-step-online" class="menu-step" hidden>
-                    <div class="menu-logo">🌐 Chơi Online</div>
-                    <p class="menu-sub">Nhập tên hiển thị của bạn</p>
-                    <div class="online-name-form">
-                        <input
-                            type="text"
-                            id="online-player-name"
-                            class="online-name-input"
-                            placeholder="Tên của bạn..."
-                            maxlength="20"
-                        />
-                        <button class="btn btn--primary" id="btn-start-online">
-                            Tìm trận →
+                    <div class="menu-logo">Online Chess</div>
+                    <p class="menu-sub">Đăng nhập Google để chơi xếp hạng</p>
+
+                    <div class="online-auth" id="online-auth-logged-out">
+                        <button class="btn btn--primary" id="btn-google-login">
+                            Đăng nhập Google
                         </button>
+                        <p class="online-auth-hint">
+                            Bạn cần đăng nhập để được cấp userId ổn định và tính
+                            ELO.
+                        </p>
                     </div>
+
+                    <div
+                        class="online-auth online-auth--user"
+                        id="online-auth-logged-in"
+                        hidden
+                    >
+                        <div class="online-user-card">
+                            <img
+                                id="online-user-avatar"
+                                class="online-user-avatar"
+                                alt="avatar"
+                            />
+                            <div class="online-user-meta">
+                                <strong id="online-user-name"
+                                    >Google Player</strong
+                                >
+                                <span id="online-user-rating"
+                                    >Rating: 1200</span
+                                >
+                            </div>
+                        </div>
+                        <div class="online-auth-actions">
+                            <button
+                                class="btn btn--primary"
+                                id="btn-start-online"
+                            >
+                                Tìm trận
+                            </button>
+                            <button
+                                class="btn btn--secondary"
+                                id="btn-google-logout"
+                            >
+                                Đăng xuất
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="leaderboard-card">
+                        <h3 class="leaderboard-title">Top Rating</h3>
+                        <div
+                            class="leaderboard-list"
+                            id="leaderboard-list"
+                        ></div>
+                    </div>
+
                     <button class="menu-back" id="menu-back-online">
-                        ← Quay lại
+                        Quay lại
                     </button>
                 </div>
             </div>
@@ -235,8 +340,30 @@
             </div>
         </div>
 
+        <!-- Resign online modal -->
+        <div class="modal-overlay" id="resign-online-modal" hidden>
+            <div class="modal">
+                <div class="modal-icon">🏳</div>
+                <h3 class="modal-title">Đầu hàng ván online?</h3>
+                <p class="modal-sub">
+                    Bạn sẽ thua ngay lập tức và kết thúc ván hiện tại.
+                </p>
+                <div class="modal-actions">
+                    <button class="btn btn--secondary" id="btn-resign-cancel">
+                        Hủy
+                    </button>
+                    <button class="btn btn--primary" id="btn-resign-confirm">
+                        Đầu hàng
+                    </button>
+                </div>
+            </div>
+        </div>
+
         <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
         <script src="sounds.js"></script>
+        <script src="pieces.js"></script>
         <script src="online.js"></script>
         <script src="chess.js"></script>
     </body>

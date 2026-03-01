@@ -1,0 +1,16 @@
+Nên bổ sung, theo thứ tự ưu tiên cao:
+
+Rời trận / Về menu trong mode online
+Lúc này bạn chưa có luồng thoát trận online rõ ràng.
+
+Hộp xác nhận cho Đầu hàng và Ván mới
+Tránh bấm nhầm, UX tốt hơn ngay.
+
+Khóa nút Yêu cầu hòa sau khi gửi
+Chỉ mở lại khi đối thủ từ chối, tránh spam event.
+
+Chơi lại (Rematch) sau khi kết thúc ván online
+Tăng retention, người chơi không phải vào queue lại.
+
+Đồng hồ cho online (server-authoritative)
+Nếu muốn game “chuẩn” hơn, đây là bước lớn tiếp theo.

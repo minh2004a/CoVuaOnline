@@ -73,6 +73,135 @@ const DIFFICULTY_LABELS = {
 };
 
 // ================================================
+// TIME CONTROLS
+// ================================================
+const TIME_CONTROLS = {
+    0: { label: "Không giới hạn" },
+    60: { label: "Bullet 1'" },
+    180: { label: "Blitz 3'" },
+    300: { label: "Blitz+ 5'" },
+    600: { label: "Rapid 10'" },
+    1800: { label: "Classical 30'" },
+};
+
+let selectedTimeControl = 0; // seconds per side (0 = unlimited)
+
+// ================================================
+// CHESS CLOCK MODULE
+// ================================================
+const ChessClock = (() => {
+    let timeW = 0; // ms remaining for white
+    let timeB = 0; // ms remaining for black
+    let active = null; // COLOR.W | COLOR.B | null
+    let intervalId = null;
+    let lastTick = null;
+
+    function formatTime(ms) {
+        if (ms <= 0) return "0:00";
+        const totalSec = Math.ceil(ms / 1000);
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec % 60;
+        return `${m}:${s.toString().padStart(2, "0")}`;
+    }
+
+    function renderClocks() {
+        const cardW = document.getElementById("clock-white");
+        const cardB = document.getElementById("clock-black");
+        const dispW = document.getElementById("clock-white-time");
+        const dispB = document.getElementById("clock-black-time");
+        if (!cardW || !cardB || !dispW || !dispB) return;
+
+        dispW.textContent = formatTime(timeW);
+        dispB.textContent = formatTime(timeB);
+
+        // Active / low classes
+        cardW.classList.toggle("clock-active", active === COLOR.W);
+        cardB.classList.toggle("clock-active", active === COLOR.B);
+        cardW.classList.toggle(
+            "clock-low",
+            active === COLOR.W && timeW <= 10000,
+        );
+        cardB.classList.toggle(
+            "clock-low",
+            active === COLOR.B && timeB <= 10000,
+        );
+    }
+
+    function tick() {
+        if (active === null) return;
+        const now = Date.now();
+        const elapsed = now - lastTick;
+        lastTick = now;
+        if (active === COLOR.W) {
+            timeW = Math.max(0, timeW - elapsed);
+            if (timeW === 0) {
+                stop();
+                onTimeout(COLOR.W);
+                return;
+            }
+        } else {
+            timeB = Math.max(0, timeB - elapsed);
+            if (timeB === 0) {
+                stop();
+                onTimeout(COLOR.B);
+                return;
+            }
+        }
+        renderClocks();
+    }
+
+    function start(color) {
+        active = color;
+        lastTick = Date.now();
+        if (!intervalId) intervalId = setInterval(tick, 100);
+        renderClocks();
+    }
+
+    function stop() {
+        active = null;
+        if (intervalId) {
+            clearInterval(intervalId);
+            intervalId = null;
+        }
+        renderClocks();
+    }
+
+    function reset(seconds) {
+        stop();
+        const ms = seconds * 1000;
+        timeW = ms;
+        timeB = ms;
+        const show = seconds > 0;
+        const cardW = document.getElementById("clock-white");
+        const cardB = document.getElementById("clock-black");
+        if (cardW) cardW.hidden = !show;
+        if (cardB) cardB.hidden = !show;
+        renderClocks();
+    }
+
+    function switchTo(color) {
+        active = color;
+        lastTick = Date.now();
+        if (!intervalId) intervalId = setInterval(tick, 100);
+        renderClocks();
+    }
+
+    function isUnlimited() {
+        return selectedTimeControl === 0;
+    }
+
+    return { start, stop, reset, switchTo, renderClocks, isUnlimited };
+})();
+
+function onTimeout(loserColor) {
+    state.gameOver = true;
+    state.winner = enemy(loserColor);
+    render();
+    showGameOver("timeout", loserColor);
+    ChessSounds.checkmate();
+}
+
+// ================================================
 // GAME STATE
 // ================================================
 let state = {};
@@ -557,6 +686,11 @@ function executeMove(move, promoType) {
     // Switch turn
     state.turn = enemy(color);
 
+    // Switch the chess clock
+    if (!ChessClock.isUnlimited() && !state.gameOver) {
+        ChessClock.switchTo(state.turn);
+    }
+
     // Check / Checkmate / Stalemate
     const nextMoves = allLegalMoves(state.turn);
     state.inCheck = isInCheck(state.board, state.turn);
@@ -597,20 +731,15 @@ function executeMove(move, promoType) {
 
     render();
     if (state.gameOver) {
-        showGameOver();
-        // Notify server only if we are the one who detected game over
-        // (the move we just executed was OUR move)
+        showGameOver(state.winner ? "checkmate" : "stalemate", null);
         if (
             gameMode === "online" &&
             typeof notifyGameOverOnline === "function"
         ) {
-            const movingColor = enemy(state.turn); // turn already switched
-            if (movingColor === myOnlineColor) {
-                notifyGameOverOnline(
-                    state.winner,
-                    state.winner ? "checkmate" : "stalemate",
-                );
-            }
+            notifyGameOverOnline(
+                state.winner,
+                state.winner ? "checkmate" : "stalemate",
+            );
         }
     }
 }
@@ -637,6 +766,7 @@ function render() {
     renderMoveHistory();
     updateCoordSizes();
     renderModeBadge();
+    renderActionButtons();
 }
 
 function renderBoard() {
@@ -701,18 +831,17 @@ function renderBoard() {
                 sq.appendChild(fileLabel);
             }
 
-            // Piece
+            // Piece — graphical SVG image
             const piece = state.board[r][c];
             if (piece) {
-                const span = document.createElement("span");
-                const pColor = colorOf(piece) === COLOR.W ? 0 : 1;
-                span.className =
-                    "piece " +
-                    (colorOf(piece) === COLOR.W
-                        ? "piece--white"
-                        : "piece--black");
-                span.textContent = SYMBOLS[typeOf(piece)][pColor];
-                sq.appendChild(span);
+                const img = document.createElement("img");
+                const colorKey = colorOf(piece) === COLOR.W ? "w" : "b";
+                const typeKey = typeOf(piece); // K Q R B N P
+                img.src = PIECE_IMGS[colorKey + typeKey];
+                img.className = "piece";
+                img.draggable = false;
+                img.alt = colorKey + typeKey;
+                sq.appendChild(img);
             }
 
             sq.addEventListener("click", onSquareClick);
@@ -814,6 +943,15 @@ function renderModeBadge() {
     } else {
         badge.textContent = `🤖 vs AI — ${DIFFICULTY_LABELS[aiDifficulty] || ""}`;
     }
+}
+
+function renderActionButtons() {
+    const localActions = document.getElementById("local-actions");
+    const onlineActions = document.getElementById("online-actions");
+    const isOnlineMode = gameMode === "online";
+
+    if (localActions) localActions.hidden = isOnlineMode;
+    if (onlineActions) onlineActions.hidden = !isOnlineMode;
 }
 
 function updateCoordSizes() {
@@ -925,11 +1063,17 @@ function showPromoModal(color) {
     const choices = document.getElementById("promotion-choices");
     choices.innerHTML = "";
     const promoTypes = ["Q", "R", "B", "N"];
+    const colorKey = color === COLOR.W ? "w" : "b";
     promoTypes.forEach((t) => {
         const btn = document.createElement("button");
         btn.className = "promo-btn";
-        btn.textContent = SYMBOLS[t][color === COLOR.W ? 0 : 1];
         btn.title = { Q: "Hậu", R: "Xe", B: "Tượng", N: "Mã" }[t];
+        const img = document.createElement("img");
+        img.src = PIECE_IMGS[colorKey + t];
+        img.alt = t;
+        img.style.cssText =
+            "width:100%;height:100%;object-fit:contain;pointer-events:none;";
+        btn.appendChild(img);
         btn.addEventListener("click", () => {
             modal.hidden = true;
             lastMove = pendingPromo;
@@ -955,13 +1099,20 @@ function showPromoModal(color) {
 // ================================================
 // GAME OVER MODAL
 // ================================================
-function showGameOver() {
+function showGameOver(reason, loserColor) {
     const modal = document.getElementById("gameover-modal");
     const titleEl = document.getElementById("gameover-title");
     const msgEl = document.getElementById("gameover-msg");
     const iconEl = document.getElementById("gameover-icon");
+    ChessClock.stop();
 
-    if (state.winner) {
+    if (reason === "timeout") {
+        const who = loserColor === COLOR.W ? "Trắng" : "Đen";
+        const winner = loserColor === COLOR.W ? "Đen" : "Trắng";
+        iconEl.textContent = "⏱";
+        titleEl.textContent = `${winner} thắng!`;
+        msgEl.textContent = `${who} hết giờ – Ván cờ kết thúc.`;
+    } else if (state.winner) {
         const who = state.winner === COLOR.W ? "Trắng" : "Đen";
         iconEl.textContent = state.winner === COLOR.W ? "♔" : "♚";
         titleEl.textContent = `${who} thắng!`;
@@ -978,7 +1129,8 @@ function showGameOver() {
 // NEW GAME / UNDO
 // ================================================
 function newGame() {
-    boardFlipped = false; // reset board orientation
+    boardFlipped = false;
+    ChessClock.stop();
     initState();
     selectedSq = null;
     legalMoveSqs = [];
@@ -987,6 +1139,11 @@ function newGame() {
     aiThinking = false;
     document.getElementById("gameover-modal").hidden = true;
     document.getElementById("promotion-modal").hidden = true;
+    // Hide clocks until a time control is chosen
+    const cw = document.getElementById("clock-white");
+    const cb = document.getElementById("clock-black");
+    if (cw) cw.hidden = true;
+    if (cb) cb.hidden = true;
     render();
     showGameMenu();
 }
@@ -1044,6 +1201,21 @@ function undoMove() {
     render();
 }
 
+function confirmNewGameIfNeeded() {
+    if (state.gameOver || state.history.length === 0) return true;
+    return window.confirm("Bắt đầu ván mới? Tiến trình hiện tại sẽ bị mất.");
+}
+
+function showResignOnlineModal() {
+    const modal = document.getElementById("resign-online-modal");
+    if (modal) modal.hidden = false;
+}
+
+function hideResignOnlineModal() {
+    const modal = document.getElementById("resign-online-modal");
+    if (modal) modal.hidden = true;
+}
+
 // ================================================
 // GAME MENU
 // ================================================
@@ -1051,9 +1223,11 @@ function showGameMenu() {
     const menu = document.getElementById("game-menu");
     const stepMode = document.getElementById("menu-step-mode");
     const stepDiff = document.getElementById("menu-step-diff");
+    const stepTime = document.getElementById("menu-step-time");
     const stepOnline = document.getElementById("menu-step-online");
     stepMode.hidden = false;
     stepDiff.hidden = true;
+    if (stepTime) stepTime.hidden = true;
     if (stepOnline) stepOnline.hidden = true;
     menu.hidden = false;
 }
@@ -1062,9 +1236,10 @@ function hideGameMenu() {
     document.getElementById("game-menu").hidden = true;
 }
 
-function startGame(mode, difficulty) {
+function startGame(mode, difficulty, timeSeconds) {
     gameMode = mode;
     aiDifficulty = difficulty;
+    selectedTimeControl = timeSeconds ?? 0;
     hideGameMenu();
     initState();
     selectedSq = null;
@@ -1074,8 +1249,14 @@ function startGame(mode, difficulty) {
     aiThinking = false;
     document.getElementById("gameover-modal").hidden = true;
     document.getElementById("promotion-modal").hidden = true;
+    // Initialise clock
+    ChessClock.reset(selectedTimeControl);
+    if (selectedTimeControl > 0) {
+        ChessClock.start(COLOR.W); // White always moves first
+    }
     render();
     ChessSounds.gameStart();
+    if (mode === "ai") scheduleAiMove();
 }
 
 /**
@@ -1086,7 +1267,7 @@ function startGame(mode, difficulty) {
 function startOnlineGame(myColor, opponentNameStr) {
     gameMode = "online";
     aiDifficulty = null;
-    // Flip board so the current player always sees themselves at the bottom
+    selectedTimeControl = 0; // Online games are unlimited for now
     boardFlipped = myColor === "b";
     hideGameMenu();
     initState();
@@ -1095,12 +1276,12 @@ function startOnlineGame(myColor, opponentNameStr) {
     lastMove = null;
     pendingPromo = null;
     aiThinking = false;
+    ChessClock.reset(0); // No clock in online mode
     document.getElementById("gameover-modal").hidden = true;
     document.getElementById("promotion-modal").hidden = true;
     render();
     ChessSounds.gameStart();
 
-    // Show which color you are playing
     const colorName = myColor === "w" ? "Trắng" : "Đen";
     if (typeof showOnlineNotification === "function") {
         showOnlineNotification(
@@ -1110,25 +1291,76 @@ function startOnlineGame(myColor, opponentNameStr) {
     }
 }
 
-// Menu event listeners
+// ================================================
+// MENU EVENT LISTENERS
+// ================================================
+
+// Shared state for menu flow: which mode was selected before time step
+let _pendingMenuMode = null;
+let _pendingMenuDiff = null;
+
+// Helper: show time control step
+function showTimeControlStep(mode, diff) {
+    _pendingMenuMode = mode;
+    _pendingMenuDiff = diff;
+    // Update logo text
+    const logo = document.getElementById("time-step-logo");
+    if (logo)
+        logo.textContent = mode === "pvp" ? "👥 Thời gian" : "🤖 Thời gian";
+    document.getElementById("menu-step-mode").hidden = true;
+    document.getElementById("menu-step-diff").hidden = true;
+    document.getElementById("menu-step-time").hidden = false;
+}
+
+// PvP → time selection
 document.getElementById("menu-pvp").addEventListener("click", () => {
-    startGame("pvp", null);
+    showTimeControlStep("pvp", null);
 });
 
+// AI → difficulty step
 document.getElementById("menu-ai").addEventListener("click", () => {
     document.getElementById("menu-step-mode").hidden = true;
     document.getElementById("menu-step-diff").hidden = false;
 });
 
+// Difficulty buttons → start game directly (no time selection for AI)
+document.querySelectorAll(".diff-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+        const diff = btn.dataset.diff;
+        startGame("ai", diff, 0); // Always unlimited when playing vs AI
+    });
+});
+
+// Back from difficulty → mode
 document.getElementById("menu-back").addEventListener("click", () => {
     document.getElementById("menu-step-mode").hidden = false;
     document.getElementById("menu-step-diff").hidden = true;
+});
+
+// Time control buttons → start game
+document.querySelectorAll(".time-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+        const secs = parseInt(btn.dataset.time, 10);
+        startGame(_pendingMenuMode, _pendingMenuDiff, secs);
+    });
+});
+
+// Back from time step → appropriate previous step
+document.getElementById("menu-back-time").addEventListener("click", () => {
+    document.getElementById("menu-step-time").hidden = true;
+    if (_pendingMenuMode === "pvp") {
+        document.getElementById("menu-step-mode").hidden = false;
+    } else {
+        document.getElementById("menu-step-diff").hidden = false;
+    }
 });
 
 // Online mode
 document.getElementById("menu-online").addEventListener("click", () => {
     document.getElementById("menu-step-mode").hidden = true;
     document.getElementById("menu-step-online").hidden = false;
+    if (typeof refreshLeaderboard === "function") refreshLeaderboard();
+    if (typeof ensureGoogleAuth === "function") ensureGoogleAuth();
 });
 
 document.getElementById("menu-back-online").addEventListener("click", () => {
@@ -1137,21 +1369,16 @@ document.getElementById("menu-back-online").addEventListener("click", () => {
 });
 
 document.getElementById("btn-start-online").addEventListener("click", () => {
-    const nameInput = document.getElementById("online-player-name");
-    const name = (nameInput?.value || "").trim() || "Ẩn danh";
-    joinOnlineQueue(name);
+    if (typeof startOnlineMatchmaking === "function") {
+        startOnlineMatchmaking();
+        return;
+    }
+    joinOnlineQueue();
 });
 
 document.getElementById("btn-cancel-queue").addEventListener("click", () => {
     cancelQueue();
     showGameMenu();
-});
-
-document.querySelectorAll(".diff-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-        const diff = btn.dataset.diff;
-        startGame("ai", diff);
-    });
 });
 
 // ================================================
@@ -1460,9 +1687,42 @@ function scheduleAiMove() {
 // ================================================
 // EVENT LISTENERS
 // ================================================
-document.getElementById("btn-new-game").addEventListener("click", newGame);
+document.getElementById("btn-new-game").addEventListener("click", () => {
+    hideResignOnlineModal();
+    if (!confirmNewGameIfNeeded()) return;
+    newGame();
+});
 document.getElementById("btn-undo").addEventListener("click", undoMove);
-document.getElementById("btn-again").addEventListener("click", newGame);
+document.getElementById("btn-offer-draw").addEventListener("click", () => {
+    if (gameMode !== "online" || state.gameOver) return;
+    if (typeof offerDrawOnline === "function") offerDrawOnline();
+});
+document.getElementById("btn-resign").addEventListener("click", () => {
+    if (gameMode !== "online" || state.gameOver) return;
+    showResignOnlineModal();
+});
+document
+    .getElementById("btn-resign-cancel")
+    .addEventListener("click", hideResignOnlineModal);
+document
+    .getElementById("btn-resign-confirm")
+    .addEventListener("click", () => {
+        hideResignOnlineModal();
+        if (gameMode !== "online") return;
+        if (typeof resignOnline === "function") resignOnline();
+    });
+document.getElementById("resign-online-modal").addEventListener("click", (e) => {
+    if (e.target === e.currentTarget) hideResignOnlineModal();
+});
+document.addEventListener("keydown", (e) => {
+    if (e.key !== "Escape") return;
+    const modal = document.getElementById("resign-online-modal");
+    if (modal && !modal.hidden) hideResignOnlineModal();
+});
+document.getElementById("btn-again").addEventListener("click", () => {
+    hideResignOnlineModal();
+    newGame();
+});
 
 window.addEventListener("resize", updateCoordSizes);
 
@@ -1472,3 +1732,5 @@ window.addEventListener("resize", updateCoordSizes);
 initState();
 render();
 showGameMenu();
+
+

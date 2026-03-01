@@ -95,10 +95,13 @@ const rooms = new Map();
 
 // Map socket id -> room id
 const playerRoom = new Map();
+// Map user id -> room id
+const userRoom = new Map();
 
 function joinQueue(player) {
     if (!player?.socketId || !player?.userId) return false;
     const timeControl = getTimeControlConfig(player.timeControlId);
+    if (userRoom.has(player.userId)) return false;
 
     const duplicatedSocket = queue.some(
         (item) => item.socketId === player.socketId,
@@ -184,6 +187,8 @@ function tryMatch() {
         rooms.set(roomId, room);
         playerRoom.set(white.socketId, roomId);
         playerRoom.set(black.socketId, roomId);
+        userRoom.set(white.userId, roomId);
+        userRoom.set(black.userId, roomId);
 
         return {
             roomId,
@@ -204,11 +209,17 @@ function getRoomForPlayer(socketId) {
     return playerRoom.get(socketId) || null;
 }
 
+function getRoomForUser(userId) {
+    return userRoom.get(userId) || null;
+}
+
 function closeRoom(roomId) {
     const room = rooms.get(roomId);
     if (!room) return null;
     playerRoom.delete(room.whiteSocketId);
     playerRoom.delete(room.blackSocketId);
+    userRoom.delete(room.whiteUserId);
+    userRoom.delete(room.blackUserId);
     rooms.delete(roomId);
     return room;
 }
@@ -262,6 +273,7 @@ module.exports = {
     tryMatch,
     getRoom,
     getRoomForPlayer,
+    getRoomForUser,
     closeRoom,
     removePlayer,
     isPlayerInRoom,

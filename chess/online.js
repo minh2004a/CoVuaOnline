@@ -348,10 +348,19 @@ function renderLeaderboard(items, emptyMessage) {
     items.forEach((item) => {
         const row = document.createElement("div");
         row.className = "leaderboard-row";
-        row.innerHTML =
-            `<span class="leaderboard-rank">#${item.rank}</span>` +
-            `<span class="leaderboard-name">${item.displayName}</span>` +
-            `<span class="leaderboard-rating">${item.rating}</span>`;
+        const rank = document.createElement("span");
+        rank.className = "leaderboard-rank";
+        rank.textContent = `#${item.rank}`;
+
+        const name = document.createElement("span");
+        name.className = "leaderboard-name";
+        name.textContent = String(item.displayName || "Player");
+
+        const rating = document.createElement("span");
+        rating.className = "leaderboard-rating";
+        rating.textContent = String(item.rating ?? "-");
+
+        row.append(rank, name, rating);
         holder.appendChild(row);
     });
 }

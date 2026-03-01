@@ -14,6 +14,7 @@ const {
     tryMatch,
     getRoom,
     getRoomForPlayer,
+    getRoomForUser,
     closeRoom,
     isPlayerInRoom,
     getOpponent,
@@ -62,6 +63,25 @@ const liveMatches = new Map(); // roomId -> { moveCount, claims: Map, finished }
 let matchmakingInProgress = false;
 const MATCHMAKING_TICK_MS = Number(process.env.MATCHMAKING_TICK_MS) || 3000;
 
+function normalizeRoomId(value) {
+    if (typeof value !== "string") return null;
+    const normalized = value.trim();
+    return normalized || null;
+}
+
+function getOrCreateLiveMatchRuntime(roomId) {
+    const existing = liveMatches.get(roomId);
+    if (existing) return existing;
+    const created = {
+        moveCount: 0,
+        claims: new Map(),
+        finished: false,
+        drawOfferedBy: null,
+    };
+    liveMatches.set(roomId, created);
+    return created;
+}
+
 function normalizeWinner(value) {
     if (value === "w" || value === "b") return value;
     return null;
@@ -106,13 +126,7 @@ async function concludeMatch(roomId, { winner = null, result, reason, message })
     const room = getRoom(roomId);
     if (!room) return;
 
-    const runtime =
-        liveMatches.get(roomId) ||
-        {
-            moveCount: 0,
-            claims: new Map(),
-            finished: false,
-        };
+    const runtime = getOrCreateLiveMatchRuntime(roomId);
 
     if (runtime.finished) return;
     runtime.finished = true;
@@ -188,6 +202,9 @@ async function startMatchFromQueueEntry(match) {
             roomId,
             whiteUserId: room.whiteUserId,
             blackUserId: room.blackUserId,
+            timeControlId: room.timeControlId,
+            baseSeconds: room.baseSeconds,
+            incrementSeconds: room.incrementSeconds,
         });
     } catch (error) {
         console.error(`[MATCH] create record failed for ${roomId}:`, error.message);
@@ -201,6 +218,7 @@ async function startMatchFromQueueEntry(match) {
         moveCount: 0,
         claims: new Map(),
         finished: false,
+        drawOfferedBy: null,
     });
 
     whiteSocket.join(roomId);
@@ -303,6 +321,13 @@ io.on("connection", (socket) => {
             socket.emit("error_msg", "You are already in a game.");
             return;
         }
+        if (getRoomForUser(user.id)) {
+            socket.emit(
+                "error_msg",
+                "Your account is already in another active game.",
+            );
+            return;
+        }
 
         const added = joinQueue({
             socketId: socket.id,
@@ -315,7 +340,7 @@ io.on("connection", (socket) => {
         if (!added) {
             socket.emit(
                 "error_msg",
-                "You are already queued (or opened another queued tab).",
+                "You are already queued or currently playing on another tab.",
             );
             return;
         }
@@ -333,57 +358,84 @@ io.on("connection", (socket) => {
         socket.emit("queue_cancelled");
     });
 
-    socket.on("move_made", ({ roomId, move, promoType }) => {
-        const room = getRoom(roomId);
+    socket.on("move_made", ({ roomId, move, promoType } = {}) => {
+        const normalizedRoomId = normalizeRoomId(roomId);
+        if (!normalizedRoomId) return;
+        const room = getRoom(normalizedRoomId);
         if (!room) return;
-        if (!isPlayerInRoom(roomId, socket.id)) return;
+        if (!isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
-        const runtime = liveMatches.get(roomId);
+        const runtime = getOrCreateLiveMatchRuntime(normalizedRoomId);
         if (runtime && !runtime.finished) {
             runtime.moveCount += 1;
+            // Draw offers expire after any move.
+            runtime.drawOfferedBy = null;
         }
 
-        const opponent = getOpponent(roomId, socket.id);
+        const opponent = getOpponent(normalizedRoomId, socket.id);
         if (opponent) {
             io.to(opponent).emit("opponent_moved", { move, promoType });
         }
     });
 
-    socket.on("offer_draw", ({ roomId }) => {
-        const room = getRoom(roomId);
-        if (!room || !isPlayerInRoom(roomId, socket.id)) return;
+    socket.on("offer_draw", ({ roomId } = {}) => {
+        const normalizedRoomId = normalizeRoomId(roomId);
+        if (!normalizedRoomId) return;
+        const room = getRoom(normalizedRoomId);
+        if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
-        const opponent = getOpponent(roomId, socket.id);
+        const runtime = getOrCreateLiveMatchRuntime(normalizedRoomId);
+        if (runtime.finished || runtime.drawOfferedBy) return;
+        runtime.drawOfferedBy = socket.id;
+
+        const opponent = getOpponent(normalizedRoomId, socket.id);
         if (opponent) io.to(opponent).emit("draw_offered");
     });
 
-    socket.on("decline_draw", ({ roomId }) => {
-        const room = getRoom(roomId);
-        if (!room || !isPlayerInRoom(roomId, socket.id)) return;
+    socket.on("decline_draw", ({ roomId } = {}) => {
+        const normalizedRoomId = normalizeRoomId(roomId);
+        if (!normalizedRoomId) return;
+        const room = getRoom(normalizedRoomId);
+        if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
-        const opponent = getOpponent(roomId, socket.id);
-        if (opponent) io.to(opponent).emit("draw_declined");
+        const runtime = getOrCreateLiveMatchRuntime(normalizedRoomId);
+        const offeredBy = runtime.drawOfferedBy;
+        if (!offeredBy || offeredBy === socket.id) return;
+
+        runtime.drawOfferedBy = null;
+        io.to(offeredBy).emit("draw_declined");
     });
 
-    socket.on("accept_draw", async ({ roomId }) => {
-        const room = getRoom(roomId);
-        if (!room || !isPlayerInRoom(roomId, socket.id)) return;
+    socket.on("accept_draw", async ({ roomId } = {}) => {
+        const normalizedRoomId = normalizeRoomId(roomId);
+        if (!normalizedRoomId) return;
+        const room = getRoom(normalizedRoomId);
+        if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
-        await concludeMatch(roomId, {
+        const runtime = getOrCreateLiveMatchRuntime(normalizedRoomId);
+        if (!runtime.drawOfferedBy || runtime.drawOfferedBy === socket.id) {
+            socket.emit("error_msg", "No valid draw offer to accept.");
+            return;
+        }
+        runtime.drawOfferedBy = null;
+
+        await concludeMatch(normalizedRoomId, {
             winner: null,
             result: "draw",
             reason: "draw",
         });
     });
 
-    socket.on("resign", async ({ roomId }) => {
-        const room = getRoom(roomId);
-        if (!room || !isPlayerInRoom(roomId, socket.id)) return;
+    socket.on("resign", async ({ roomId } = {}) => {
+        const normalizedRoomId = normalizeRoomId(roomId);
+        if (!normalizedRoomId) return;
+        const room = getRoom(normalizedRoomId);
+        if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
         const isWhite = room.whiteSocketId === socket.id;
         const winner = isWhite ? "b" : "w";
 
-        await concludeMatch(roomId, {
+        await concludeMatch(normalizedRoomId, {
             winner,
             result: resultFromWinner(winner),
             reason: "resign",
@@ -408,14 +460,16 @@ io.on("connection", (socket) => {
         });
     });
 
-    socket.on("leave_game", async ({ roomId }) => {
-        const room = getRoom(roomId);
-        if (!room || !isPlayerInRoom(roomId, socket.id)) return;
+    socket.on("leave_game", async ({ roomId } = {}) => {
+        const normalizedRoomId = normalizeRoomId(roomId);
+        if (!normalizedRoomId) return;
+        const room = getRoom(normalizedRoomId);
+        if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
         const isWhite = room.whiteSocketId === socket.id;
         const winner = isWhite ? "b" : "w";
 
-        await concludeMatch(roomId, {
+        await concludeMatch(normalizedRoomId, {
             winner,
             result: resultFromWinner(winner),
             reason: "disconnect",
@@ -423,9 +477,11 @@ io.on("connection", (socket) => {
         });
     });
 
-    socket.on("notify_game_over", async ({ roomId, winner, reason }) => {
-        const room = getRoom(roomId);
-        if (!room || !isPlayerInRoom(roomId, socket.id)) return;
+    socket.on("notify_game_over", async ({ roomId, winner, reason } = {}) => {
+        const normalizedRoomId = normalizeRoomId(roomId);
+        if (!normalizedRoomId) return;
+        const room = getRoom(normalizedRoomId);
+        if (!room || !isPlayerInRoom(normalizedRoomId, socket.id)) return;
 
         const normalizedReason =
             reason === "checkmate" || reason === "stalemate" ? reason : null;
@@ -443,20 +499,14 @@ io.on("connection", (socket) => {
             return;
         }
 
-        const runtime =
-            liveMatches.get(roomId) ||
-            {
-                moveCount: 0,
-                claims: new Map(),
-                finished: false,
-            };
+        const runtime = getOrCreateLiveMatchRuntime(normalizedRoomId);
 
         if (runtime.finished) return;
         runtime.claims.set(socket.id, {
             winner: normalizedWinner,
             reason: normalizedReason,
         });
-        liveMatches.set(roomId, runtime);
+        liveMatches.set(normalizedRoomId, runtime);
 
         if (runtime.claims.size < 2) {
             socket.emit("game_over_pending", {
@@ -475,7 +525,7 @@ io.on("connection", (socket) => {
             whiteClaim.winner === blackClaim.winner;
 
         if (!matched) {
-            await concludeMatch(roomId, {
+            await concludeMatch(normalizedRoomId, {
                 winner: null,
                 result: "disputed",
                 reason: "disputed",
@@ -483,7 +533,7 @@ io.on("connection", (socket) => {
             return;
         }
 
-        await concludeMatch(roomId, {
+        await concludeMatch(normalizedRoomId, {
             winner: whiteClaim.winner,
             result: resultFromWinner(whiteClaim.winner),
             reason: whiteClaim.reason,

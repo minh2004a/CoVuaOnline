@@ -10,6 +10,40 @@ const DB_FILE =
     path.join(__dirname, "data", "chess-online.sqlite");
 
 let dbPromise = null;
+let writeQueue = Promise.resolve();
+const DEFAULT_TIME_CONTROL_ID = "10|0";
+const DEFAULT_BASE_SECONDS = 10 * 60;
+const DEFAULT_INCREMENT_SECONDS = 0;
+
+function withDbWriteLock(task) {
+    const run = writeQueue.then(() => task());
+    writeQueue = run.catch(() => {});
+    return run;
+}
+
+async function ensureMatchesSchema(db) {
+    const columns = await db.all("PRAGMA table_info(matches)");
+    const existing = new Set(columns.map((column) => column.name));
+
+    if (!existing.has("time_control_id")) {
+        await db.exec(`
+            ALTER TABLE matches
+            ADD COLUMN time_control_id TEXT NOT NULL DEFAULT '${DEFAULT_TIME_CONTROL_ID}'
+        `);
+    }
+    if (!existing.has("base_seconds")) {
+        await db.exec(`
+            ALTER TABLE matches
+            ADD COLUMN base_seconds INTEGER NOT NULL DEFAULT ${DEFAULT_BASE_SECONDS}
+        `);
+    }
+    if (!existing.has("increment_seconds")) {
+        await db.exec(`
+            ALTER TABLE matches
+            ADD COLUMN increment_seconds INTEGER NOT NULL DEFAULT ${DEFAULT_INCREMENT_SECONDS}
+        `);
+    }
+}
 
 function ensureDbDir() {
     const dir = path.dirname(DB_FILE);
@@ -61,6 +95,9 @@ async function initDb() {
             black_rating_before INTEGER NOT NULL,
             white_rating_after INTEGER,
             black_rating_after INTEGER,
+            time_control_id TEXT NOT NULL DEFAULT '${DEFAULT_TIME_CONTROL_ID}',
+            base_seconds INTEGER NOT NULL DEFAULT ${DEFAULT_BASE_SECONDS},
+            increment_seconds INTEGER NOT NULL DEFAULT ${DEFAULT_INCREMENT_SECONDS},
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             finished_at TEXT,
             FOREIGN KEY (white_user_id) REFERENCES users(id),
@@ -79,6 +116,7 @@ async function initDb() {
             FOREIGN KEY (match_id) REFERENCES matches(id)
         );
     `);
+    await ensureMatchesSchema(db);
 }
 
 function toPublicUser(row) {
@@ -104,86 +142,133 @@ async function getUserById(id) {
 }
 
 async function upsertGoogleUser(decodedToken) {
-    const db = await getDb();
-    const uid = decodedToken?.uid;
-    if (!uid) throw new Error("Missing Google uid in token payload.");
+    return withDbWriteLock(async () => {
+        const db = await getDb();
+        const uid = decodedToken?.uid;
+        if (!uid) throw new Error("Missing Google uid in token payload.");
 
-    const email = decodedToken.email || null;
-    const displayName =
-        decodedToken.name || decodedToken.email || "Google Player";
-    const photoUrl = decodedToken.picture || null;
+        const email = decodedToken.email || null;
+        const displayName =
+            decodedToken.name || decodedToken.email || "Google Player";
+        const photoUrl = decodedToken.picture || null;
 
-    await db.run("BEGIN IMMEDIATE TRANSACTION");
-    try {
-        const existing = await db.get(
-            "SELECT * FROM users WHERE google_uid = ?",
-            [uid],
-        );
+        let txStarted = false;
+        try {
+            await db.run("BEGIN IMMEDIATE TRANSACTION");
+            txStarted = true;
 
-        if (existing) {
-            await db.run(
-                `
-                    UPDATE users
-                    SET email = ?, display_name = ?, photo_url = ?, updated_at = CURRENT_TIMESTAMP
-                    WHERE google_uid = ?
-                `,
-                [email, displayName, photoUrl, uid],
+            const existing = await db.get(
+                "SELECT * FROM users WHERE google_uid = ?",
+                [uid],
             );
-        } else {
-            await db.run(
-                `
-                    INSERT INTO users (google_uid, email, display_name, photo_url, rating)
-                    VALUES (?, ?, ?, ?, ?)
-                `,
-                [uid, email, displayName, photoUrl, DEFAULT_RATING],
-            );
+
+            if (existing) {
+                await db.run(
+                    `
+                        UPDATE users
+                        SET email = ?, display_name = ?, photo_url = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE google_uid = ?
+                    `,
+                    [email, displayName, photoUrl, uid],
+                );
+            } else {
+                await db.run(
+                    `
+                        INSERT INTO users (google_uid, email, display_name, photo_url, rating)
+                        VALUES (?, ?, ?, ?, ?)
+                    `,
+                    [uid, email, displayName, photoUrl, DEFAULT_RATING],
+                );
+            }
+
+            const row = await db.get("SELECT * FROM users WHERE google_uid = ?", [
+                uid,
+            ]);
+            await db.run("COMMIT");
+            txStarted = false;
+            return toPublicUser(row);
+        } catch (error) {
+            if (txStarted) {
+                try {
+                    await db.run("ROLLBACK");
+                } catch (rollbackError) {
+                    console.error("[DB] rollback failed:", rollbackError.message);
+                }
+            }
+            throw error;
         }
-
-        const row = await db.get("SELECT * FROM users WHERE google_uid = ?", [
-            uid,
-        ]);
-        await db.run("COMMIT");
-        return toPublicUser(row);
-    } catch (error) {
-        await db.run("ROLLBACK");
-        throw error;
-    }
+    });
 }
 
-async function createMatchRecord({ roomId, whiteUserId, blackUserId }) {
-    const db = await getDb();
-    const white = await db.get(
-        "SELECT id, rating FROM users WHERE id = ? LIMIT 1",
-        [whiteUserId],
-    );
-    const black = await db.get(
-        "SELECT id, rating FROM users WHERE id = ? LIMIT 1",
-        [blackUserId],
-    );
+async function createMatchRecord({
+    roomId,
+    whiteUserId,
+    blackUserId,
+    timeControlId = DEFAULT_TIME_CONTROL_ID,
+    baseSeconds = DEFAULT_BASE_SECONDS,
+    incrementSeconds = DEFAULT_INCREMENT_SECONDS,
+}) {
+    return withDbWriteLock(async () => {
+        const db = await getDb();
+        const white = await db.get(
+            "SELECT id, rating FROM users WHERE id = ? LIMIT 1",
+            [whiteUserId],
+        );
+        const black = await db.get(
+            "SELECT id, rating FROM users WHERE id = ? LIMIT 1",
+            [blackUserId],
+        );
 
-    if (!white || !black) {
-        throw new Error("Cannot create match: player not found.");
-    }
+        if (!white || !black) {
+            throw new Error("Cannot create match: player not found.");
+        }
 
-    const result = await db.run(
-        `
-            INSERT INTO matches (
-                room_id,
-                white_user_id,
-                black_user_id,
-                white_rating_before,
-                black_rating_before
-            )
-            VALUES (?, ?, ?, ?, ?)
-        `,
-        [roomId, white.id, black.id, white.rating, black.rating],
-    );
+        const normalizedTimeControlId =
+            typeof timeControlId === "string" && timeControlId.trim()
+                ? timeControlId.trim()
+                : DEFAULT_TIME_CONTROL_ID;
+        const normalizedBaseSeconds = Number.isFinite(Number(baseSeconds))
+            ? Math.max(0, Math.trunc(Number(baseSeconds)))
+            : DEFAULT_BASE_SECONDS;
+        const normalizedIncrementSeconds = Number.isFinite(Number(incrementSeconds))
+            ? Math.max(0, Math.trunc(Number(incrementSeconds)))
+            : DEFAULT_INCREMENT_SECONDS;
 
-    return {
-        matchId: result.lastID,
-        whiteRatingBefore: white.rating,
-        blackRatingBefore: black.rating,
-    };
+        const result = await db.run(
+            `
+                INSERT INTO matches (
+                    room_id,
+                    white_user_id,
+                    black_user_id,
+                    white_rating_before,
+                    black_rating_before,
+                    time_control_id,
+                    base_seconds,
+                    increment_seconds
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `,
+            [
+                roomId,
+                white.id,
+                black.id,
+                white.rating,
+                black.rating,
+                normalizedTimeControlId,
+                normalizedBaseSeconds,
+                normalizedIncrementSeconds,
+            ],
+        );
+
+        return {
+            matchId: result.lastID,
+            whiteRatingBefore: white.rating,
+            blackRatingBefore: black.rating,
+            timeControlId: normalizedTimeControlId,
+            baseSeconds: normalizedBaseSeconds,
+            incrementSeconds: normalizedIncrementSeconds,
+        };
+    });
 }
 
 function expectedScore(playerRating, opponentRating) {
@@ -253,172 +338,186 @@ function buildStatDelta(result) {
 }
 
 async function finalizeMatch({ roomId, result, reason, moveCount = 0 }) {
-    const db = await getDb();
+    return withDbWriteLock(async () => {
+        const db = await getDb();
+        let txStarted = false;
 
-    await db.run("BEGIN IMMEDIATE TRANSACTION");
-    try {
-        const match = await db.get(
-            `
-                SELECT
-                    m.*,
-                    w.display_name AS white_name,
-                    b.display_name AS black_name
-                FROM matches m
-                JOIN users w ON w.id = m.white_user_id
-                JOIN users b ON b.id = m.black_user_id
-                WHERE m.room_id = ?
-                LIMIT 1
-            `,
-            [roomId],
-        );
+        try {
+            await db.run("BEGIN IMMEDIATE TRANSACTION");
+            txStarted = true;
 
-        if (!match) {
-            throw new Error(`Match not found for room ${roomId}`);
-        }
-        if (match.finished_at) {
-            await db.run("COMMIT");
-            return {
-                alreadyFinished: true,
-                rated: Boolean(match.rated),
-            };
-        }
-
-        const rated = shouldBeRated(result);
-        let whiteAfter = match.white_rating_before;
-        let blackAfter = match.black_rating_before;
-        let whiteDelta = 0;
-        let blackDelta = 0;
-
-        if (rated) {
-            const elo = calculateElo(
-                match.white_rating_before,
-                match.black_rating_before,
-                result,
-            );
-            whiteAfter = elo.whiteAfter;
-            blackAfter = elo.blackAfter;
-            whiteDelta = elo.whiteDelta;
-            blackDelta = elo.blackDelta;
-        }
-
-        await db.run(
-            `
-                UPDATE matches
-                SET
-                    result = ?,
-                    reason = ?,
-                    rated = ?,
-                    move_count = ?,
-                    white_rating_after = ?,
-                    black_rating_after = ?,
-                    finished_at = CURRENT_TIMESTAMP
-                WHERE room_id = ?
-            `,
-            [
-                result,
-                reason || null,
-                rated ? 1 : 0,
-                moveCount,
-                whiteAfter,
-                blackAfter,
-                roomId,
-            ],
-        );
-
-        if (rated) {
-            const statDelta = buildStatDelta(result);
-
-            await db.run(
+            const match = await db.get(
                 `
-                    UPDATE users
-                    SET
-                        rating = ?,
-                        games_played = games_played + ?,
-                        wins = wins + ?,
-                        losses = losses + ?,
-                        draws = draws + ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
+                    SELECT
+                        m.*,
+                        w.display_name AS white_name,
+                        b.display_name AS black_name
+                    FROM matches m
+                    JOIN users w ON w.id = m.white_user_id
+                    JOIN users b ON b.id = m.black_user_id
+                    WHERE m.room_id = ?
+                    LIMIT 1
                 `,
-                [
-                    whiteAfter,
-                    statDelta.white.gamesPlayed,
-                    statDelta.white.wins,
-                    statDelta.white.losses,
-                    statDelta.white.draws,
-                    match.white_user_id,
-                ],
+                [roomId],
             );
 
-            await db.run(
-                `
-                    UPDATE users
-                    SET
-                        rating = ?,
-                        games_played = games_played + ?,
-                        wins = wins + ?,
-                        losses = losses + ?,
-                        draws = draws + ?,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = ?
-                `,
-                [
-                    blackAfter,
-                    statDelta.black.gamesPlayed,
-                    statDelta.black.wins,
-                    statDelta.black.losses,
-                    statDelta.black.draws,
-                    match.black_user_id,
-                ],
-            );
+            if (!match) {
+                throw new Error(`Match not found for room ${roomId}`);
+            }
+            if (match.finished_at) {
+                await db.run("COMMIT");
+                txStarted = false;
+                return {
+                    alreadyFinished: true,
+                    rated: Boolean(match.rated),
+                };
+            }
 
-            await db.run(
-                `
-                    INSERT INTO ratings (user_id, match_id, rating_before, rating_after, delta)
-                    VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)
-                `,
-                [
-                    match.white_user_id,
-                    match.id,
+            const rated = shouldBeRated(result);
+            let whiteAfter = match.white_rating_before;
+            let blackAfter = match.black_rating_before;
+            let whiteDelta = 0;
+            let blackDelta = 0;
+
+            if (rated) {
+                const elo = calculateElo(
                     match.white_rating_before,
-                    whiteAfter,
-                    whiteDelta,
-                    match.black_user_id,
-                    match.id,
                     match.black_rating_before,
+                    result,
+                );
+                whiteAfter = elo.whiteAfter;
+                blackAfter = elo.blackAfter;
+                whiteDelta = elo.whiteDelta;
+                blackDelta = elo.blackDelta;
+            }
+
+            await db.run(
+                `
+                    UPDATE matches
+                    SET
+                        result = ?,
+                        reason = ?,
+                        rated = ?,
+                        move_count = ?,
+                        white_rating_after = ?,
+                        black_rating_after = ?,
+                        finished_at = CURRENT_TIMESTAMP
+                    WHERE room_id = ?
+                `,
+                [
+                    result,
+                    reason || null,
+                    rated ? 1 : 0,
+                    moveCount,
+                    whiteAfter,
                     blackAfter,
-                    blackDelta,
+                    roomId,
                 ],
             );
-        }
 
-        await db.run("COMMIT");
-        return {
-            alreadyFinished: false,
-            rated,
-            roomId,
-            result,
-            reason: reason || null,
-            moveCount,
-            white: {
-                id: match.white_user_id,
-                name: match.white_name || "White",
-                before: match.white_rating_before,
-                after: whiteAfter,
-                delta: whiteDelta,
-            },
-            black: {
-                id: match.black_user_id,
-                name: match.black_name || "Black",
-                before: match.black_rating_before,
-                after: blackAfter,
-                delta: blackDelta,
-            },
-        };
-    } catch (error) {
-        await db.run("ROLLBACK");
-        throw error;
-    }
+            if (rated) {
+                const statDelta = buildStatDelta(result);
+
+                await db.run(
+                    `
+                        UPDATE users
+                        SET
+                            rating = ?,
+                            games_played = games_played + ?,
+                            wins = wins + ?,
+                            losses = losses + ?,
+                            draws = draws + ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    `,
+                    [
+                        whiteAfter,
+                        statDelta.white.gamesPlayed,
+                        statDelta.white.wins,
+                        statDelta.white.losses,
+                        statDelta.white.draws,
+                        match.white_user_id,
+                    ],
+                );
+
+                await db.run(
+                    `
+                        UPDATE users
+                        SET
+                            rating = ?,
+                            games_played = games_played + ?,
+                            wins = wins + ?,
+                            losses = losses + ?,
+                            draws = draws + ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    `,
+                    [
+                        blackAfter,
+                        statDelta.black.gamesPlayed,
+                        statDelta.black.wins,
+                        statDelta.black.losses,
+                        statDelta.black.draws,
+                        match.black_user_id,
+                    ],
+                );
+
+                await db.run(
+                    `
+                        INSERT INTO ratings (user_id, match_id, rating_before, rating_after, delta)
+                        VALUES (?, ?, ?, ?, ?), (?, ?, ?, ?, ?)
+                    `,
+                    [
+                        match.white_user_id,
+                        match.id,
+                        match.white_rating_before,
+                        whiteAfter,
+                        whiteDelta,
+                        match.black_user_id,
+                        match.id,
+                        match.black_rating_before,
+                        blackAfter,
+                        blackDelta,
+                    ],
+                );
+            }
+
+            await db.run("COMMIT");
+            txStarted = false;
+
+            return {
+                alreadyFinished: false,
+                rated,
+                roomId,
+                result,
+                reason: reason || null,
+                moveCount,
+                white: {
+                    id: match.white_user_id,
+                    name: match.white_name || "White",
+                    before: match.white_rating_before,
+                    after: whiteAfter,
+                    delta: whiteDelta,
+                },
+                black: {
+                    id: match.black_user_id,
+                    name: match.black_name || "Black",
+                    before: match.black_rating_before,
+                    after: blackAfter,
+                    delta: blackDelta,
+                },
+            };
+        } catch (error) {
+            if (txStarted) {
+                try {
+                    await db.run("ROLLBACK");
+                } catch (rollbackError) {
+                    console.error("[DB] rollback failed:", rollbackError.message);
+                }
+            }
+            throw error;
+        }
+    });
 }
 
 async function getLeaderboard(limit = 20) {

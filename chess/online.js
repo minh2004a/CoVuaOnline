@@ -263,10 +263,11 @@ function connectSocket() {
 
     socket.on("game_over", ({ reason, winner, message, ratingUpdate }) => {
         const alreadyOver = state.gameOver;
+        const playerColor = myOnlineColor;
 
         if (reason === "disconnect") {
-            endOnlineMatchToMenu(message, winner || myOnlineColor);
-            if (ratingUpdate) applyRatingUpdate(ratingUpdate);
+            if (ratingUpdate) applyRatingUpdate(ratingUpdate, playerColor);
+            endOnlineMatchToMenu(message, winner || playerColor);
             return;
         }
 
@@ -284,7 +285,7 @@ function connectSocket() {
             }
         }
 
-        if (ratingUpdate) applyRatingUpdate(ratingUpdate);
+        if (ratingUpdate) applyRatingUpdate(ratingUpdate, playerColor);
 
         resetOnlineState();
         render();
@@ -297,8 +298,10 @@ function connectSocket() {
     });
 }
 
-function applyRatingUpdate(ratingUpdate) {
-    const side = myOnlineColor === "w" ? ratingUpdate.white : ratingUpdate.black;
+function applyRatingUpdate(ratingUpdate, playerColor = myOnlineColor) {
+    if (playerColor !== "w" && playerColor !== "b") return;
+    const side =
+        playerColor === "w" ? ratingUpdate.white : ratingUpdate.black;
     if (!side || !Number.isFinite(side.after)) return;
 
     myRating = side.after;

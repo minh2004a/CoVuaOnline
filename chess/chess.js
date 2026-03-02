@@ -162,8 +162,8 @@ const ChessClock = (() => {
 
         dispW.textContent = formatTime(timeW);
         dispB.textContent = formatTime(timeB);
-        if (stateW) stateW.textContent = active === COLOR.W ? "Dang di" : "Cho";
-        if (stateB) stateB.textContent = active === COLOR.B ? "Dang di" : "Cho";
+        if (stateW) stateW.textContent = active === COLOR.W ? "Đang đi" : "Cho";
+        if (stateB) stateB.textContent = active === COLOR.B ? "Đang đi" : "Cho";
 
         // Active / low classes
         cardW.classList.toggle("clock-active", active === COLOR.W);
@@ -769,7 +769,9 @@ function executeMove(move, promoType) {
         enPassant: state.enPassant,
         captured: { w: [...state.captured.w], b: [...state.captured.b] },
         moves: [...state.moves],
+        lastMove: lastMove ? { ...lastMove } : null,
     });
+    lastMove = { ...move };
 
     const piece = state.board[move.fr][move.fc];
     const color = colorOf(piece);
@@ -880,6 +882,14 @@ let legalMoveSqs = []; // array of move objects
 let lastMove = null; // { fr, fc, tr, tc }
 let pendingPromo = null; // move object awaiting promotion choice
 let boardFlipped = false; // true when playing as black in online mode
+let previousRenderedMoveCount = 0;
+
+const MOBILE_ACTION_MIRRORS = Object.freeze([
+    ["btn-new-game-mobile", "btn-new-game"],
+    ["btn-undo-mobile", "btn-undo"],
+    ["btn-offer-draw-mobile", "btn-offer-draw"],
+    ["btn-resign-mobile", "btn-resign"],
+]);
 
 function applyOnlineMoveFromServer(move, promoType) {
     if (!move) return;
@@ -889,7 +899,6 @@ function applyOnlineMoveFromServer(move, promoType) {
         const modal = document.getElementById("gameover-modal");
         if (modal) modal.hidden = true;
     }
-    lastMove = move;
     selectedSq = null;
     legalMoveSqs = [];
     pendingPromo = null;
@@ -946,10 +955,9 @@ function renderBoard() {
 
             // Highlights
             if (lastMove) {
-                if (
-                    (r === lastMove.fr && c === lastMove.fc) ||
-                    (r === lastMove.tr && c === lastMove.tc)
-                )
+                if (r === lastMove.fr && c === lastMove.fc)
+                    sq.classList.add("last-from");
+                if (r === lastMove.tr && c === lastMove.tc)
                     sq.classList.add("last-to");
             }
             if (selectedSq && selectedSq.r === r && selectedSq.c === c)
@@ -1064,25 +1072,61 @@ function renderCaptured() {
 function renderMoveHistory() {
     const tbody = document.getElementById("move-list-body");
     const countEl = document.getElementById("move-count");
+    const wrap = document.querySelector(".move-list-wrap");
     if (!tbody) return;
+
+    const moveCount = state.moves.length;
+    const previousMoveCount = previousRenderedMoveCount;
+    const shouldSmoothScroll = moveCount > previousMoveCount;
+    const shouldScrollToLatest = moveCount !== previousMoveCount;
+    const preservedScrollTop = wrap ? wrap.scrollTop : 0;
+    const latestMoveIndex = moveCount - 1;
+
     tbody.innerHTML = "";
-    const pairs = [];
-    let i = 0;
-    while (i < state.moves.length) {
+
+    for (let i = 0; i < moveCount; i += 2) {
         const w = state.moves[i];
         const b = state.moves[i + 1];
-        pairs.push([w, b]);
-        i += 2;
-    }
-    pairs.forEach((p, idx) => {
         const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${idx + 1}.</td><td>${p[0]?.note || ""}</td><td>${p[1]?.note || ""}</td>`;
+
+        const numCell = document.createElement("td");
+        numCell.textContent = `${Math.floor(i / 2) + 1}.`;
+
+        const whiteCell = document.createElement("td");
+        whiteCell.className = "move-cell";
+        whiteCell.textContent = w?.note || "";
+        if (i === latestMoveIndex) {
+            whiteCell.classList.add("move-cell--active");
+        }
+
+        const blackCell = document.createElement("td");
+        blackCell.className = "move-cell";
+        blackCell.textContent = b?.note || "";
+        if (i + 1 === latestMoveIndex) {
+            blackCell.classList.add("move-cell--active");
+        }
+
+        tr.append(numCell, whiteCell, blackCell);
         tbody.appendChild(tr);
-    });
-    // Scroll to bottom
-    const wrap = document.querySelector(".move-list-wrap");
-    if (wrap) wrap.scrollTop = wrap.scrollHeight;
-    if (countEl) countEl.textContent = `${state.moves.length} nước đi`;
+    }
+
+    if (wrap) {
+        if (moveCount === 0) {
+            wrap.scrollTop = 0;
+        } else if (!shouldScrollToLatest) {
+            wrap.scrollTop = preservedScrollTop;
+        } else if (typeof wrap.scrollTo === "function") {
+            wrap.scrollTo({
+                top: wrap.scrollHeight,
+                behavior: shouldSmoothScroll ? "smooth" : "auto",
+            });
+        } else {
+            wrap.scrollTop = wrap.scrollHeight;
+        }
+    }
+
+    if (countEl) countEl.textContent = `${moveCount} nước đi`;
+    previousRenderedMoveCount = moveCount;
 }
 
 function renderModeBadge() {
@@ -1114,15 +1158,60 @@ function renderModeBadge() {
     }
 }
 
+function bindMobileActionButtons() {
+    MOBILE_ACTION_MIRRORS.forEach(([mobileId, desktopId]) => {
+        const mobileBtn = document.getElementById(mobileId);
+        const desktopBtn = document.getElementById(desktopId);
+        if (!mobileBtn || !desktopBtn || mobileBtn.dataset.bound === "1")
+            return;
+
+        mobileBtn.dataset.bound = "1";
+        mobileBtn.addEventListener("click", () => {
+            if (desktopBtn.disabled) return;
+            desktopBtn.click();
+        });
+    });
+}
+
+function syncMobileActionButtons() {
+    MOBILE_ACTION_MIRRORS.forEach(([mobileId, desktopId]) => {
+        const mobileBtn = document.getElementById(mobileId);
+        const desktopBtn = document.getElementById(desktopId);
+        if (!mobileBtn || !desktopBtn) return;
+
+        const label = desktopBtn.textContent ? desktopBtn.textContent.trim() : "";
+        if (label) mobileBtn.textContent = label;
+        mobileBtn.disabled = !!desktopBtn.disabled;
+        mobileBtn.classList.toggle(
+            "btn--cooldown",
+            desktopBtn.classList.contains("btn--cooldown"),
+        );
+    });
+}
+
 function renderActionButtons() {
     const localActions = document.getElementById("local-actions");
     const onlineActions = document.getElementById("online-actions");
     const onlineStatusCard = document.getElementById("online-status-card");
+    const mobileBar = document.getElementById("mobile-action-bar");
+    const mobileLocalActions = document.getElementById("mobile-local-actions");
+    const mobileOnlineActions = document.getElementById("mobile-online-actions");
+    const menu = document.getElementById("game-menu");
     const isOnlineMode = gameMode === "online";
+    const isInMenu = !!(menu && !menu.hidden);
+    const hasActiveMatchUi = !!gameMode && !isInMenu;
 
     if (localActions) localActions.hidden = isOnlineMode;
     if (onlineActions) onlineActions.hidden = !isOnlineMode;
     if (onlineStatusCard) onlineStatusCard.hidden = !isOnlineMode;
+    if (mobileBar) mobileBar.hidden = !hasActiveMatchUi;
+    if (mobileLocalActions) mobileLocalActions.hidden = !hasActiveMatchUi || isOnlineMode;
+    if (mobileOnlineActions) mobileOnlineActions.hidden = !hasActiveMatchUi || !isOnlineMode;
+
+    document.body.classList.toggle("has-mobile-action-bar", hasActiveMatchUi);
+
+    bindMobileActionButtons();
+    syncMobileActionButtons();
 
     syncClockBeepToggleUi();
     bindClockBeepToggle();
@@ -1190,9 +1279,6 @@ function onSquareClick(e) {
                 pendingPromo = move;
                 showPromoModal(colorOf(state.board[move.fr][move.fc]));
                 return;
-            }
-            if (gameMode !== "online") {
-                lastMove = move;
             }
             selectedSq = null;
             legalMoveSqs = [];
@@ -1267,9 +1353,6 @@ function showPromoModal(color) {
         btn.appendChild(img);
         btn.addEventListener("click", () => {
             modal.hidden = true;
-            if (gameMode !== "online") {
-                lastMove = pendingPromo;
-            }
             const move = pendingPromo;
             pendingPromo = null;
             selectedSq = null;
@@ -1375,6 +1458,7 @@ function undoMove() {
             state.enPassant = snap.enPassant;
             state.captured = snap.captured;
             state.moves = snap.moves;
+            lastMove = snap.lastMove || null;
         } else {
             const snap = state.history.pop();
             state.board = snap.board;
@@ -1383,6 +1467,7 @@ function undoMove() {
             state.enPassant = snap.enPassant;
             state.captured = snap.captured;
             state.moves = snap.moves;
+            lastMove = snap.lastMove || null;
         }
     } else {
         const snap = state.history.pop();
@@ -1392,6 +1477,7 @@ function undoMove() {
         state.enPassant = snap.enPassant;
         state.captured = snap.captured;
         state.moves = snap.moves;
+        lastMove = snap.lastMove || null;
     }
 
     state.gameOver = false;
@@ -1399,7 +1485,6 @@ function undoMove() {
     state.winner = null;
     selectedSq = null;
     legalMoveSqs = [];
-    lastMove = null;
     document.getElementById("gameover-modal").hidden = true;
     render();
 }
@@ -1433,10 +1518,12 @@ function showGameMenu() {
     if (stepTime) stepTime.hidden = true;
     if (stepOnline) stepOnline.hidden = true;
     menu.hidden = false;
+    renderActionButtons();
 }
 
 function hideGameMenu() {
     document.getElementById("game-menu").hidden = true;
+    renderActionButtons();
 }
 
 function startGame(mode, difficulty, timeSeconds) {
@@ -1897,7 +1984,6 @@ function scheduleAiMove() {
             return;
         }
 
-        lastMove = move;
         selectedSq = null;
         legalMoveSqs = [];
 

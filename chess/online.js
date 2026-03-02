@@ -897,8 +897,10 @@ function setDrawOfferButtonPending(isPending) {
     const pending = !!isPending;
     const cooldownSeconds = getDrawOfferCooldownRemainingSeconds();
     const onCooldown = cooldownSeconds > 0;
-    const btn = getEl("btn-offer-draw");
-    if (btn) {
+    const buttons = [getEl("btn-offer-draw"), getEl("btn-offer-draw-mobile")];
+
+    buttons.forEach((btn) => {
+        if (!btn) return;
         btn.disabled = pending || onCooldown;
         btn.classList.toggle("btn--cooldown", onCooldown);
         if (pending && onCooldown) {
@@ -910,7 +912,7 @@ function setDrawOfferButtonPending(isPending) {
         } else {
             btn.textContent = "Offer draw";
         }
-    }
+    });
     renderOnlineActionHint(pending, cooldownSeconds);
     refreshDrawOfferCooldownTicker();
 }

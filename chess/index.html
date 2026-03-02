@@ -49,10 +49,19 @@
                     </div>
 
                     <!-- Online status card -->
-                    <div class="online-status-card" id="online-status-card" hidden>
+                    <div
+                        class="online-status-card"
+                        id="online-status-card"
+                        hidden
+                    >
                         <div class="online-status-head">
-                            <span class="online-status-title">Online match</span>
-                            <span class="online-status-conn" id="online-status-conn">
+                            <span class="online-status-title"
+                                >Online match</span
+                            >
+                            <span
+                                class="online-status-conn"
+                                id="online-status-conn"
+                            >
                                 Offline
                             </span>
                         </div>
@@ -61,7 +70,7 @@
                             id="online-status-reconnect"
                             hidden
                         >
-                            Dang ket noi lai...
+                            Đang kết nối lại...
                         </div>
                         <div class="online-status-grid">
                             <div class="online-status-row">
@@ -81,7 +90,10 @@
                                 <strong id="online-status-turn">-</strong>
                             </div>
                         </div>
-                        <label class="online-status-option" for="clock-beep-toggle">
+                        <label
+                            class="online-status-option"
+                            for="clock-beep-toggle"
+                        >
                             <input
                                 id="clock-beep-toggle"
                                 type="checkbox"
@@ -154,7 +166,7 @@
                         <div class="clock-info">
                             <span class="clock-name">Đen</span>
                             <span class="clock-state" id="clock-black-state"
-                                >Cho</span
+                                >Chờ</span
                             >
                             <span class="clock-time" id="clock-black-time"
                                 >—</span
@@ -172,7 +184,7 @@
                         <div class="clock-info">
                             <span class="clock-name">Trắng</span>
                             <span class="clock-state" id="clock-white-state"
-                                >Cho</span
+                                >Chờ</span
                             >
                             <span class="clock-time" id="clock-white-time"
                                 >—</span
@@ -199,6 +211,42 @@
                     <div class="move-count" id="move-count">0 nước đi</div>
                 </aside>
             </main>
+        </div>
+
+        <!-- Mobile fixed action bar -->
+        <div class="mobile-action-bar" id="mobile-action-bar" hidden>
+            <div class="mobile-action-row" id="mobile-local-actions" hidden>
+                <button
+                    class="btn btn--primary mobile-action-btn"
+                    id="btn-new-game-mobile"
+                    type="button"
+                >
+                    New game
+                </button>
+                <button
+                    class="btn btn--secondary mobile-action-btn"
+                    id="btn-undo-mobile"
+                    type="button"
+                >
+                    Undo
+                </button>
+            </div>
+            <div class="mobile-action-row" id="mobile-online-actions" hidden>
+                <button
+                    class="btn btn--secondary mobile-action-btn"
+                    id="btn-offer-draw-mobile"
+                    type="button"
+                >
+                    Offer draw
+                </button>
+                <button
+                    class="btn btn--danger mobile-action-btn"
+                    id="btn-resign-mobile"
+                    type="button"
+                >
+                    Resign
+                </button>
+            </div>
         </div>
 
         <!-- Game menu modal -->
@@ -301,7 +349,11 @@
                 </div>
 
                 <!-- Step 3: Online ranked -->
-                <div id="menu-step-online" class="menu-step menu-step--online" hidden>
+                <div
+                    id="menu-step-online"
+                    class="menu-step menu-step--online"
+                    hidden
+                >
                     <div class="menu-logo">Online Chess</div>
                     <p class="menu-sub">Đăng nhập Google để chơi xếp hạng</p>
 
@@ -384,7 +436,9 @@
                     <div class="leaderboard-card">
                         <div class="leaderboard-head">
                             <h3 class="leaderboard-title">Top Elo</h3>
-                            <span class="leaderboard-updated" id="leaderboard-updated"
+                            <span
+                                class="leaderboard-updated"
+                                id="leaderboard-updated"
                                 >Updating...</span
                             >
                         </div>
@@ -414,7 +468,9 @@
                 <div class="lobby-meta">
                     <span class="lobby-elapsed" id="lobby-elapsed">00:00</span>
                     <span class="lobby-dot" aria-hidden="true"></span>
-                    <span class="lobby-hint">Matching by rating and queue time</span>
+                    <span class="lobby-hint"
+                        >Matching by rating and queue time</span
+                    >
                 </div>
                 <div class="lobby-progress" aria-hidden="true">
                     <span></span>

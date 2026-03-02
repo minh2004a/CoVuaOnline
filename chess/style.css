@@ -2193,3 +2193,316 @@ body {
         justify-content: center;
     }
 }
+
+/* ================================
+   ARENA LAYOUT REFRESH
+   ================================ */
+body.arena-layout {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    align-items: stretch;
+    justify-content: stretch;
+    min-height: 100vh;
+    background:
+        radial-gradient(circle at 20% 10%, rgba(86, 151, 72, 0.09), transparent 35%),
+        radial-gradient(circle at 85% 20%, rgba(36, 78, 138, 0.12), transparent 40%),
+        linear-gradient(180deg, #13161c, #0e1116);
+}
+
+body.arena-layout .arena-rail {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    padding: 16px 10px;
+    border-right: 1px solid rgba(71, 81, 101, 0.45);
+    background: linear-gradient(180deg, rgba(19, 24, 31, 0.98), rgba(12, 15, 22, 0.98));
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+}
+
+body.arena-layout .arena-rail__brand {
+    font-size: 0.95rem;
+    font-weight: 800;
+    letter-spacing: 0.2px;
+    color: #f4f7ff;
+    text-align: center;
+    padding: 8px 6px 12px;
+    border-bottom: 1px solid rgba(89, 100, 121, 0.45);
+    margin-bottom: 4px;
+}
+
+body.arena-layout .arena-rail__item {
+    border: 1px solid rgba(82, 92, 113, 0.45);
+    background: rgba(34, 40, 52, 0.82);
+    color: #c8d1e5;
+    font-family: "Inter", sans-serif;
+    font-size: 0.72rem;
+    font-weight: 700;
+    border-radius: 9px;
+    padding: 9px 6px;
+    cursor: pointer;
+    transition:
+        background 0.2s ease,
+        border-color 0.2s ease,
+        transform 0.15s ease;
+}
+
+body.arena-layout .arena-rail__item:hover {
+    transform: translateY(-1px);
+    border-color: rgba(126, 214, 100, 0.65);
+    background: rgba(56, 84, 54, 0.48);
+}
+
+body.arena-layout .arena-rail__item--active {
+    color: #0f1b0d;
+    border-color: rgba(157, 230, 111, 0.78);
+    background: linear-gradient(135deg, #9fd470, #79ba52);
+}
+
+body.arena-layout .app {
+    max-width: none;
+    padding: 18px 16px 24px;
+    gap: 14px;
+}
+
+body.arena-layout .app-header {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(78, 88, 108, 0.5);
+    background:
+        linear-gradient(155deg, rgba(35, 40, 53, 0.96), rgba(24, 29, 39, 0.96)),
+        radial-gradient(circle at 80% 50%, rgba(134, 206, 94, 0.08), transparent 58%);
+}
+
+body.arena-layout .logo {
+    font-size: clamp(1.35rem, 2vw, 1.8rem);
+    line-height: 1;
+    letter-spacing: -0.2px;
+}
+
+body.arena-layout .tagline {
+    margin: 0;
+    text-align: left;
+    letter-spacing: 0.8px;
+    font-size: 0.7rem;
+}
+
+body.arena-layout .game-container--arena {
+    display: grid;
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr) minmax(290px, 360px);
+    gap: 14px;
+    align-items: start;
+    justify-content: stretch;
+}
+
+body.arena-layout .side-panel {
+    width: auto;
+    min-width: 0;
+    border: 1px solid rgba(84, 95, 118, 0.5);
+    border-radius: 14px;
+    background: linear-gradient(170deg, rgba(34, 40, 54, 0.95), rgba(23, 27, 37, 0.95));
+    padding: 10px;
+    box-shadow: 0 16px 28px rgba(5, 8, 13, 0.34);
+}
+
+body.arena-layout .side-panel--right {
+    max-height: calc(100vh - 118px);
+    display: flex;
+    flex-direction: column;
+}
+
+body.arena-layout .panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+body.arena-layout .panel-title {
+    border: none;
+    padding: 0;
+    margin: 0;
+}
+
+body.arena-layout .panel-status {
+    font-size: 0.66rem;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    font-weight: 700;
+    border-radius: 999px;
+    border: 1px solid rgba(124, 215, 98, 0.55);
+    color: #8fda74;
+    padding: 3px 8px;
+    background: rgba(93, 168, 68, 0.18);
+}
+
+body.arena-layout .panel-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+
+body.arena-layout .panel-tab {
+    border: 1px solid rgba(77, 89, 110, 0.45);
+    border-radius: 8px;
+    background: rgba(29, 36, 47, 0.9);
+    color: #9ca8bf;
+    font-family: "Inter", sans-serif;
+    font-size: 0.7rem;
+    font-weight: 700;
+    padding: 7px 5px;
+}
+
+body.arena-layout .panel-tab--active {
+    border-color: rgba(140, 224, 103, 0.58);
+    color: #d9ffd0;
+    background: linear-gradient(150deg, rgba(81, 124, 63, 0.48), rgba(41, 65, 37, 0.5));
+}
+
+body.arena-layout .move-list-wrap {
+    flex: 1;
+    min-height: 270px;
+    max-height: none;
+    border: 1px solid rgba(74, 86, 107, 0.44);
+    border-radius: 10px;
+    overflow: auto;
+    background: rgba(15, 20, 28, 0.66);
+}
+
+body.arena-layout .move-list th {
+    background: rgba(16, 21, 31, 0.94);
+}
+
+body.arena-layout .move-list td {
+    border-bottom-color: rgba(70, 82, 103, 0.35);
+}
+
+body.arena-layout .move-count {
+    border-top: 1px solid rgba(74, 86, 107, 0.34);
+    padding-top: 8px;
+}
+
+body.arena-layout .board-col {
+    border: 1px solid rgba(84, 96, 118, 0.52);
+    border-radius: 14px;
+    background:
+        linear-gradient(165deg, rgba(34, 40, 54, 0.95), rgba(23, 28, 38, 0.95)),
+        radial-gradient(circle at 10% 10%, rgba(160, 219, 123, 0.07), transparent 42%);
+    padding: 10px;
+    box-shadow: 0 18px 34px rgba(6, 9, 15, 0.35);
+}
+
+body.arena-layout .board {
+    width: min(640px, 52vw);
+    height: min(640px, 52vw);
+    border-radius: 10px;
+    box-shadow:
+        0 14px 36px rgba(0, 0, 0, 0.56),
+        0 0 0 2px rgba(124, 211, 89, 0.75),
+        0 0 0 6px rgba(18, 26, 20, 0.92);
+}
+
+body.arena-layout .clock-card {
+    width: min(640px, 52vw);
+    border-color: rgba(86, 97, 120, 0.58);
+    background: linear-gradient(160deg, rgba(33, 38, 51, 0.97), rgba(22, 27, 37, 0.97));
+}
+
+body.arena-layout .captured-panel,
+body.arena-layout .turn-card,
+body.arena-layout .online-status-card,
+body.arena-layout .status-banner,
+body.arena-layout .online-action-cluster {
+    background: rgba(23, 29, 41, 0.84);
+    border-color: rgba(79, 92, 116, 0.5);
+}
+
+body.arena-layout .status-banner {
+    min-height: 38px;
+}
+
+@media (max-width: 1300px) {
+    body.arena-layout .game-container--arena {
+        grid-template-columns: minmax(210px, 240px) minmax(0, 1fr) minmax(270px, 320px);
+    }
+    body.arena-layout .board {
+        width: min(600px, 50vw);
+        height: min(600px, 50vw);
+    }
+    body.arena-layout .clock-card {
+        width: min(600px, 50vw);
+    }
+}
+
+@media (max-width: 1140px) {
+    body.arena-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+    body.arena-layout .arena-rail {
+        display: none;
+    }
+    body.arena-layout .app {
+        padding: 14px 12px 22px;
+    }
+    body.arena-layout .game-container--arena {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 12px;
+    }
+    body.arena-layout .side-panel {
+        width: min(640px, 95vw);
+    }
+    body.arena-layout .board-col {
+        width: min(640px, 95vw);
+    }
+    body.arena-layout .board {
+        width: min(640px, 95vw);
+        height: min(640px, 95vw);
+    }
+    body.arena-layout .clock-card {
+        width: min(640px, 95vw);
+    }
+    body.arena-layout .side-panel--left {
+        order: 2;
+    }
+    body.arena-layout .board-col {
+        order: 1;
+    }
+    body.arena-layout .side-panel--right {
+        order: 3;
+        max-height: none;
+    }
+}
+
+@media (max-width: 700px) {
+    body.arena-layout .app-header {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        text-align: center;
+        gap: 6px;
+    }
+    body.arena-layout .tagline {
+        text-align: center;
+    }
+    body.arena-layout .board {
+        width: min(560px, 94vw);
+        height: min(560px, 94vw);
+    }
+    body.arena-layout .clock-card {
+        width: min(560px, 94vw);
+    }
+    body.arena-layout .panel-tabs {
+        gap: 4px;
+    }
+    body.arena-layout .panel-tab {
+        padding: 6px 4px;
+        font-size: 0.66rem;
+    }
+}

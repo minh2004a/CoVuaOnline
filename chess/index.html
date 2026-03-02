@@ -15,7 +15,16 @@
         />
         <link rel="stylesheet" href="style.css" />
     </head>
-    <body>
+    <body class="arena-layout">
+        <aside class="arena-rail" aria-label="Quick menu">
+            <div class="arena-rail__brand">BoardLab</div>
+            <button class="arena-rail__item arena-rail__item--active" type="button">
+                Match
+            </button>
+            <button class="arena-rail__item" type="button">Puzzles</button>
+            <button class="arena-rail__item" type="button">Learn</button>
+            <button class="arena-rail__item" type="button">Profile</button>
+        </aside>
         <div class="app">
             <!-- Header -->
             <header class="app-header">
@@ -25,7 +34,7 @@
             </header>
 
             <!-- Main game area -->
-            <main class="game-container">
+            <main class="game-container game-container--arena">
                 <!-- Left panel: info + controls -->
                 <aside class="side-panel side-panel--left">
                     <!-- Captured pieces BLACK captured -->
@@ -195,7 +204,17 @@
 
                 <!-- Right panel: move history -->
                 <aside class="side-panel side-panel--right">
-                    <h2 class="panel-title">Lịch sử nước đi</h2>
+                    <div class="panel-head">
+                        <h2 class="panel-title">Move Log</h2>
+                        <span class="panel-status">Live</span>
+                    </div>
+                    <div class="panel-tabs" aria-hidden="true">
+                        <button class="panel-tab panel-tab--active" type="button">
+                            Moves
+                        </button>
+                        <button class="panel-tab" type="button">Info</button>
+                        <button class="panel-tab" type="button">Review</button>
+                    </div>
                     <div class="move-list-wrap">
                         <table class="move-list" id="move-list">
                             <thead>
@@ -541,3 +560,5 @@
         <script src="chess.js"></script>
     </body>
 </html>
+
+

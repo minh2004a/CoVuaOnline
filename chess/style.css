@@ -23,6 +23,8 @@
     --danger: #ef4444;
     --danger-strong: #dc2626;
     --danger-soft: rgba(239, 68, 68, 0.18);
+    --ok: #36b696;
+    --warn: #f59e0b;
 
     --text: #e8eaf0;
     --text-dim: #8892aa;
@@ -187,6 +189,128 @@ body {
     font-size: 1rem;
     font-weight: 700;
     color: var(--text);
+}
+
+/* ================================
+   ONLINE STATUS CARD
+   ================================ */
+.online-status-card {
+    background: linear-gradient(160deg, rgba(39, 46, 63, 0.95), rgba(27, 33, 46, 0.95));
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: var(--shadow-sm);
+}
+
+.online-status-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.online-status-title {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+}
+
+.online-status-conn {
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.4px;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    background: rgba(115, 130, 160, 0.12);
+}
+
+.online-status-conn--connected {
+    border-color: rgba(54, 182, 150, 0.45);
+    color: #8de6d2;
+    background: rgba(54, 182, 150, 0.18);
+}
+
+.online-status-conn--connecting,
+.online-status-conn--reconnecting {
+    border-color: rgba(245, 158, 11, 0.45);
+    color: #f8c879;
+    background: rgba(245, 158, 11, 0.16);
+}
+
+.online-status-conn--disconnected {
+    border-color: rgba(239, 68, 68, 0.45);
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.16);
+}
+
+.online-status-reconnect {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #f8c879;
+    border: 1px dashed rgba(245, 158, 11, 0.4);
+    border-radius: 8px;
+    padding: 6px 8px;
+    text-align: center;
+    background: rgba(245, 158, 11, 0.1);
+    animation: reconnectPulse 1.1s ease-in-out infinite;
+}
+
+@keyframes reconnectPulse {
+    0%,
+    100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: 0.65;
+    }
+}
+
+.online-status-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 6px;
+}
+
+.online-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 0.78rem;
+    color: var(--text-dim);
+}
+
+.online-status-row strong {
+    color: var(--text);
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-align: right;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#online-status-turn.online-status-turn--mine {
+    color: var(--gold-light);
+}
+
+.online-status-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.74rem;
+    color: var(--text-muted);
+}
+
+.online-status-option input {
+    accent-color: var(--ok);
 }
 
 /* ================================
@@ -664,6 +788,7 @@ body {
         order: 3;
     }
     .turn-card,
+    .online-status-card,
     .captured-panel,
     .btn-group,
     .status-banner {
@@ -1522,7 +1647,9 @@ body {
     box-shadow: var(--shadow-sm);
     transition:
         border-color 0.3s,
-        background 0.3s;
+        background 0.3s,
+        box-shadow 0.3s,
+        transform 0.25s;
 }
 .clock-card[hidden] {
     display: none !important;
@@ -1530,11 +1657,13 @@ body {
 
 /* Active player clock */
 .clock-card.clock-active {
-    border-color: var(--gold);
-    background: var(--bg-3);
+    border-color: var(--gold-light);
+    background: linear-gradient(155deg, rgba(45, 52, 72, 0.95), rgba(31, 37, 52, 0.95));
     box-shadow:
-        0 0 0 2px rgba(212, 168, 67, 0.2),
+        0 0 0 2px rgba(240, 192, 96, 0.34),
+        0 0 26px rgba(240, 192, 96, 0.28),
         var(--shadow-sm);
+    transform: translateY(-1px);
 }
 
 /* Low time (<= 10s): flash red */
@@ -1544,6 +1673,12 @@ body {
     animation: clockFlash 1s ease-in-out infinite;
 }
 
+.clock-card.clock-low.clock-active {
+    animation:
+        clockFlash 0.9s ease-in-out infinite,
+        clockShake 0.75s ease-in-out infinite;
+}
+
 @keyframes clockFlash {
     0%,
     100% {
@@ -1551,6 +1686,25 @@ body {
     }
     50% {
         opacity: 0.6;
+    }
+}
+
+@keyframes clockShake {
+    0%,
+    100% {
+        transform: translateX(0);
+    }
+    20% {
+        transform: translateX(-1px);
+    }
+    40% {
+        transform: translateX(1px);
+    }
+    60% {
+        transform: translateX(-1px);
+    }
+    80% {
+        transform: translateX(1px);
     }
 }
 
@@ -1581,6 +1735,22 @@ body {
     letter-spacing: 1px;
     color: var(--text-muted);
 }
+
+.clock-state {
+    font-size: 0.66rem;
+    letter-spacing: 0.4px;
+    color: var(--text-muted);
+}
+
+.clock-active .clock-state {
+    color: var(--gold-light);
+    font-weight: 700;
+}
+
+.clock-low .clock-state {
+    color: #fda4af;
+}
+
 .clock-time {
     font-size: 1.55rem;
     font-weight: 700;

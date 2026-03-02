@@ -145,6 +145,10 @@ const ChessSounds = (() => {
         playTone(180, 0.12, "sawtooth", 0.1, 0.08);
     }
 
+    function clockWarning() {
+        playTone(1200, 0.06, "square", 0.08);
+    }
+
     // ── Expose API ─────────────────────────────────────────────
     return {
         move,
@@ -157,5 +161,6 @@ const ChessSounds = (() => {
         gameStart,
         select,
         illegal,
+        clockWarning,
     };
 })();

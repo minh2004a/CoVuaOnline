@@ -15,6 +15,9 @@ let pendingQueueJoin = false;
 let onlineRoomId = null;
 let myOnlineColor = null;
 let opponentName = null;
+let opponentRating = null;
+let currentOnlineMatchTimeLabel = null;
+let onlineConnectionState = "disconnected";
 let drawOfferPending = false;
 let drawRequestSent = false;
 const DRAW_OFFER_COOLDOWN_MS = 8000;
@@ -54,6 +57,70 @@ function getEl(id) {
     return document.getElementById(id);
 }
 
+function formatOpponentRating(value) {
+    return Number.isFinite(value) ? String(Math.round(value)) : "--";
+}
+
+function getOnlineConnectionMeta(state) {
+    switch (state) {
+        case "connected":
+            return { label: "Connected", className: "online-status-conn--connected" };
+        case "connecting":
+            return { label: "Connecting", className: "online-status-conn--connecting" };
+        case "reconnecting":
+            return {
+                label: "Reconnecting",
+                className: "online-status-conn--reconnecting",
+            };
+        default:
+            return {
+                label: "Disconnected",
+                className: "online-status-conn--disconnected",
+            };
+    }
+}
+
+function renderOnlineStatusCard() {
+    const connEl = getEl("online-status-conn");
+    const reconnectEl = getEl("online-status-reconnect");
+    const opponentEl = getEl("online-status-opponent");
+    const eloEl = getEl("online-status-elo");
+    const timeEl = getEl("online-status-time");
+    if (!connEl || !reconnectEl || !opponentEl || !eloEl || !timeEl) return;
+
+    const connMeta = getOnlineConnectionMeta(onlineConnectionState);
+    connEl.textContent = connMeta.label;
+    connEl.className = `online-status-conn ${connMeta.className}`;
+
+    reconnectEl.hidden = onlineConnectionState !== "reconnecting";
+
+    opponentEl.textContent = opponentName || "Waiting...";
+    eloEl.textContent = formatOpponentRating(opponentRating);
+    if (currentOnlineMatchTimeLabel) {
+        timeEl.textContent = currentOnlineMatchTimeLabel;
+    } else {
+        timeEl.textContent = getOnlineTimeControl(selectedOnlineTimeControlId).label;
+    }
+}
+
+function setOnlineConnectionState(nextState) {
+    if (onlineConnectionState === nextState) {
+        renderOnlineStatusCard();
+        return false;
+    }
+    onlineConnectionState = nextState;
+    renderOnlineStatusCard();
+    return true;
+}
+
+function updateOnlineTurnStatus(isMyTurn) {
+    const turnEl = getEl("online-status-turn");
+    if (!turnEl) return;
+    const mine = !!isMyTurn;
+    turnEl.textContent = mine ? "Your move" : "Opponent move";
+    turnEl.classList.toggle("online-status-turn--mine", mine);
+}
+
 function normalizeOnlineTimeControlId(value) {
     if (typeof value !== "string") return DEFAULT_ONLINE_TIME_CONTROL_ID;
     const normalized = value.trim();
@@ -82,6 +149,7 @@ function setOnlineTimeControlSelection(timeControlId) {
     if (selectedEl) {
         selectedEl.textContent = `Time: ${getOnlineTimeControl(normalized).label}`;
     }
+    renderOnlineStatusCard();
 }
 
 function setLeaderboardLoading() {
@@ -188,6 +256,8 @@ async function ensureGoogleAuth() {
                         myRating = null;
                         socketAuthed = false;
                         if (socket && socket.connected) socket.disconnect();
+                        resetOnlineState();
+                        renderOnlineStatusCard();
                         updateAuthPanels(false);
                         await refreshLeaderboard();
                         return;
@@ -228,16 +298,19 @@ async function ensureGoogleAuth() {
 function connectSocket() {
     if (socket && socket.connected) return;
     if (socket && !socket.connected) {
+        setOnlineConnectionState("connecting");
         socket.connect();
         return;
     }
 
+    setOnlineConnectionState("connecting");
     socket = io(SERVER_URL, {
         transports: ["websocket", "polling"],
     });
 
     socket.on("connect", () => {
         socketAuthed = false;
+        setOnlineConnectionState("connected");
         if (currentIdToken) {
             socket.emit("authenticate", { idToken: currentIdToken });
         }
@@ -246,8 +319,44 @@ function connectSocket() {
 
     socket.on("connect_error", (err) => {
         console.error("[Online] connect_error", err.message);
+        if (onlineRoomId) {
+            const changed = setOnlineConnectionState("reconnecting");
+            if (changed) {
+                showOnlineNotification("Network unstable. Reconnecting...", "warning");
+            }
+            return;
+        }
+        setOnlineConnectionState("disconnected");
         hideLobbyScreen();
         showOnlineError("Cannot connect to online server.");
+    });
+
+    socket.on("disconnect", (reason) => {
+        socketAuthed = false;
+        if (onlineRoomId || pendingQueueJoin) {
+            const changed = setOnlineConnectionState("reconnecting");
+            if (changed) {
+                showOnlineNotification(
+                    "Connection lost. Trying to reconnect...",
+                    "warning",
+                );
+            }
+        } else {
+            setOnlineConnectionState("disconnected");
+        }
+        console.warn("[Online] disconnected:", reason);
+    });
+
+    socket.io.on("reconnect_attempt", () => {
+        setOnlineConnectionState("reconnecting");
+    });
+
+    socket.io.on("reconnect_failed", () => {
+        setOnlineConnectionState("disconnected");
+    });
+
+    socket.io.on("reconnect", () => {
+        setOnlineConnectionState("connected");
     });
 
     socket.on("auth_success", ({ user }) => {
@@ -300,12 +409,14 @@ function connectSocket() {
             color,
             opponentName: opName,
             myRating: freshRating,
+            opponentRating: opRating,
             clock,
             timeControl,
         }) => {
             onlineRoomId = roomId;
             myOnlineColor = color;
             opponentName = opName;
+            opponentRating = Number.isFinite(opRating) ? opRating : null;
             drawRequestSent = false;
             resetDrawOfferCooldown();
             awaitingMoveAck = false;
@@ -315,11 +426,16 @@ function connectSocket() {
                 ? getOnlineTimeControl(timeControl.id)
                 : getOnlineTimeControl(selectedOnlineTimeControlId);
             setOnlineTimeControlSelection(appliedTimeControl.id);
+            currentOnlineMatchTimeLabel = appliedTimeControl.label;
 
             if (Number.isFinite(freshRating)) {
                 myRating = freshRating;
                 updateAuthPanels(true, firebaseCurrentUser, { rating: myRating });
             }
+
+            setOnlineConnectionState("connected");
+            updateOnlineTurnStatus(color === "w");
+            renderOnlineStatusCard();
 
             hideLobbyScreen();
             startOnlineGame(color, opName, appliedTimeControl);
@@ -767,10 +883,14 @@ function resetOnlineState() {
     onlineRoomId = null;
     myOnlineColor = null;
     opponentName = null;
+    opponentRating = null;
+    currentOnlineMatchTimeLabel = null;
     drawOfferPending = false;
     drawRequestSent = false;
     awaitingMoveAck = false;
     resetDrawOfferCooldown();
+    updateOnlineTurnStatus(false);
+    setOnlineConnectionState(socket && socket.connected ? "connected" : "disconnected");
 }
 
 function setDrawOfferButtonPending(isPending) {
@@ -832,6 +952,7 @@ function hideLobbyScreen() {
 
 function showOnlineError(msg) {
     hideLobbyScreen();
+    setOnlineConnectionState("disconnected");
     if (typeof showGameMenu === "function") showGameMenu();
     showOnlineNotification(msg, "error");
 }
@@ -910,5 +1031,7 @@ function bindOnlineUiEvents() {
 }
 
 bindOnlineUiEvents();
+setOnlineConnectionState("disconnected");
+updateOnlineTurnStatus(false);
 ensureGoogleAuth();
 refreshLeaderboard();

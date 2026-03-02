@@ -88,6 +88,48 @@ let selectedTimeControl = 0; // seconds per side (0 = unlimited)
 let selectedTimeIncrement = 0; // increment seconds per move
 let onlineTimeControlLabel = null;
 
+const CLOCK_LOW_WARNING_MS = 10000;
+const CLOCK_BEEP_STORAGE_KEY = "chess_clock_warning_beep";
+let clockBeepEnabled = true;
+
+function isClockBeepEnabled() {
+    return !!clockBeepEnabled;
+}
+
+function loadClockBeepPreference() {
+    try {
+        const raw = window.localStorage.getItem(CLOCK_BEEP_STORAGE_KEY);
+        if (raw === "0") clockBeepEnabled = false;
+        if (raw === "1") clockBeepEnabled = true;
+    } catch (_err) {
+        clockBeepEnabled = true;
+    }
+}
+
+function saveClockBeepPreference() {
+    try {
+        window.localStorage.setItem(CLOCK_BEEP_STORAGE_KEY, clockBeepEnabled ? "1" : "0");
+    } catch (_err) {
+        // Ignore storage errors (private mode / quota / unsupported).
+    }
+}
+
+function syncClockBeepToggleUi() {
+    const el = document.getElementById("clock-beep-toggle");
+    if (!el) return;
+    el.checked = !!clockBeepEnabled;
+}
+
+function bindClockBeepToggle() {
+    const el = document.getElementById("clock-beep-toggle");
+    if (!el || el.dataset.bound === "1") return;
+    el.dataset.bound = "1";
+    el.addEventListener("change", () => {
+        clockBeepEnabled = !!el.checked;
+        saveClockBeepPreference();
+    });
+}
+
 // ================================================
 // CHESS CLOCK MODULE
 // ================================================
@@ -98,6 +140,8 @@ const ChessClock = (() => {
     let active = null; // COLOR.W | COLOR.B | null
     let intervalId = null;
     let lastTick = null;
+    const lowWarnedByColor = { w: false, b: false };
+    const lastBeepSecondByColor = { w: null, b: null };
 
     function formatTime(ms) {
         if (ms <= 0) return "0:00";
@@ -112,22 +156,55 @@ const ChessClock = (() => {
         const cardB = document.getElementById("clock-black");
         const dispW = document.getElementById("clock-white-time");
         const dispB = document.getElementById("clock-black-time");
+        const stateW = document.getElementById("clock-white-state");
+        const stateB = document.getElementById("clock-black-state");
         if (!cardW || !cardB || !dispW || !dispB) return;
 
         dispW.textContent = formatTime(timeW);
         dispB.textContent = formatTime(timeB);
+        if (stateW) stateW.textContent = active === COLOR.W ? "Dang di" : "Cho";
+        if (stateB) stateB.textContent = active === COLOR.B ? "Dang di" : "Cho";
 
         // Active / low classes
         cardW.classList.toggle("clock-active", active === COLOR.W);
         cardB.classList.toggle("clock-active", active === COLOR.B);
         cardW.classList.toggle(
             "clock-low",
-            active === COLOR.W && timeW <= 10000,
+            active === COLOR.W && timeW <= CLOCK_LOW_WARNING_MS,
         );
         cardB.classList.toggle(
             "clock-low",
-            active === COLOR.B && timeB <= 10000,
+            active === COLOR.B && timeB <= CLOCK_LOW_WARNING_MS,
         );
+
+        maybeWarnLowTime();
+    }
+
+    function maybeWarnLowTime() {
+        if (active !== COLOR.W && active !== COLOR.B) return;
+        const activeKey = active === COLOR.W ? "w" : "b";
+        const remainingMs = active === COLOR.W ? timeW : timeB;
+
+        if (remainingMs <= 0 || remainingMs > CLOCK_LOW_WARNING_MS) {
+            lowWarnedByColor[activeKey] = false;
+            lastBeepSecondByColor[activeKey] = null;
+            return;
+        }
+
+        const sec = Math.ceil(remainingMs / 1000);
+        if (!lowWarnedByColor[activeKey]) {
+            lowWarnedByColor[activeKey] = true;
+            if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+                navigator.vibrate([40, 60, 40]);
+            }
+        }
+
+        if (lastBeepSecondByColor[activeKey] === sec) return;
+        lastBeepSecondByColor[activeKey] = sec;
+        if (!isClockBeepEnabled()) return;
+        if (typeof ChessSounds !== "undefined" && typeof ChessSounds.clockWarning === "function") {
+            ChessSounds.clockWarning();
+        }
     }
 
     function tick() {
@@ -174,6 +251,10 @@ const ChessClock = (() => {
         const ms = seconds * 1000;
         timeW = ms;
         timeB = ms;
+        lowWarnedByColor.w = false;
+        lowWarnedByColor.b = false;
+        lastBeepSecondByColor.w = null;
+        lastBeepSecondByColor.b = null;
         incrementMs = Math.max(0, Number(incrementSeconds) || 0) * 1000;
         const show = seconds > 0;
         const cardW = document.getElementById("clock-white");
@@ -930,6 +1011,18 @@ function renderTurn() {
     ind.className =
         "turn-indicator " + (state.turn === COLOR.W ? "white" : "black");
     pl.textContent = state.turn === COLOR.W ? "Trắng" : "Đen";
+
+    if (typeof updateOnlineTurnStatus === "function") {
+        if (
+            gameMode === "online" &&
+            typeof myOnlineColor !== "undefined" &&
+            (myOnlineColor === "w" || myOnlineColor === "b")
+        ) {
+            updateOnlineTurnStatus(state.turn === myOnlineColor);
+        } else {
+            updateOnlineTurnStatus(false);
+        }
+    }
 }
 
 function renderStatus() {
@@ -1024,10 +1117,15 @@ function renderModeBadge() {
 function renderActionButtons() {
     const localActions = document.getElementById("local-actions");
     const onlineActions = document.getElementById("online-actions");
+    const onlineStatusCard = document.getElementById("online-status-card");
     const isOnlineMode = gameMode === "online";
 
     if (localActions) localActions.hidden = isOnlineMode;
     if (onlineActions) onlineActions.hidden = !isOnlineMode;
+    if (onlineStatusCard) onlineStatusCard.hidden = !isOnlineMode;
+
+    syncClockBeepToggleUi();
+    bindClockBeepToggle();
 }
 
 function updateCoordSizes() {
@@ -1854,6 +1952,7 @@ window.addEventListener("resize", updateCoordSizes);
 // ================================================
 // BOOT
 // ================================================
+loadClockBeepPreference();
 initState();
 render();
 showGameMenu();

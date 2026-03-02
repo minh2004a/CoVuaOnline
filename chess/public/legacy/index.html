@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="vi">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Cờ Vua - Chess Online</title>
+        <meta
+            name="description"
+            content="Game cờ vua trên trình duyệt với giao diện đẹp, đầy đủ luật cờ vua chuẩn."
+        />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="style.css" />
+    </head>
+    <body class="arena-layout">
+        <aside class="arena-rail" aria-label="Quick menu">
+            <div class="arena-rail__brand">BoardLab</div>
+            <button class="arena-rail__item arena-rail__item--active" type="button">
+                Match
+            </button>
+            <button class="arena-rail__item" type="button">Puzzles</button>
+            <button class="arena-rail__item" type="button">Learn</button>
+            <button class="arena-rail__item" type="button">Profile</button>
+        </aside>
+        <div class="app">
+            <!-- Header -->
+            <header class="app-header">
+                <h1 class="logo">♟ Chess</h1>
+                <p class="tagline">Classic chess in your browser</p>
+                <div class="mode-badge" id="mode-badge"></div>
+            </header>
+
+            <!-- Main game area -->
+            <main class="game-container game-container--arena">
+                <!-- Left panel: info + controls -->
+                <aside class="side-panel side-panel--left">
+                    <!-- Captured pieces BLACK captured -->
+                    <div class="captured-panel" id="captured-white">
+                        <span class="captured-label">Trắng bị bắt</span>
+                        <div
+                            class="captured-pieces"
+                            id="captured-white-pieces"
+                        ></div>
+                    </div>
+
+                    <!-- Turn indicator -->
+                    <div class="turn-card" id="turn-card">
+                        <div class="turn-indicator" id="turn-indicator"></div>
+                        <div class="turn-info">
+                            <span class="turn-label">Lượt đi</span>
+                            <span class="turn-player" id="turn-player"
+                                >Trắng</span
+                            >
+                        </div>
+                    </div>
+
+                    <!-- Online status card -->
+                    <div
+                        class="online-status-card"
+                        id="online-status-card"
+                        hidden
+                    >
+                        <div class="online-status-head">
+                            <span class="online-status-title"
+                                >Online match</span
+                            >
+                            <span
+                                class="online-status-conn"
+                                id="online-status-conn"
+                            >
+                                Offline
+                            </span>
+                        </div>
+                        <div
+                            class="online-status-reconnect"
+                            id="online-status-reconnect"
+                            hidden
+                        >
+                            Đang kết nối lại...
+                        </div>
+                        <div class="online-status-grid">
+                            <div class="online-status-row">
+                                <span>Opponent</span>
+                                <strong id="online-status-opponent">-</strong>
+                            </div>
+                            <div class="online-status-row">
+                                <span>Elo</span>
+                                <strong id="online-status-elo">-</strong>
+                            </div>
+                            <div class="online-status-row">
+                                <span>Time</span>
+                                <strong id="online-status-time">-</strong>
+                            </div>
+                            <div class="online-status-row">
+                                <span>Turn</span>
+                                <strong id="online-status-turn">-</strong>
+                            </div>
+                        </div>
+                        <label
+                            class="online-status-option"
+                            for="clock-beep-toggle"
+                        >
+                            <input
+                                id="clock-beep-toggle"
+                                type="checkbox"
+                                checked
+                            />
+                            Beep warning &lt;10s
+                        </label>
+                    </div>
+
+                    <!-- Status message -->
+                    <div class="status-banner" id="status-banner"></div>
+
+                    <!-- Buttons -->
+                    <div class="btn-group" id="local-actions">
+                        <button class="btn btn--primary" id="btn-new-game">
+                            🔄 Ván mới
+                        </button>
+                        <button class="btn btn--secondary" id="btn-undo">
+                            ↩ Hoàn tác
+                        </button>
+                    </div>
+                    <div
+                        class="btn-group online-action-cluster"
+                        id="online-actions"
+                        hidden
+                    >
+                        <div class="online-action-cluster__title">
+                            Trong trận online
+                        </div>
+                        <div class="online-action-cluster__row">
+                            <button
+                                class="btn btn--secondary"
+                                id="btn-offer-draw"
+                                type="button"
+                            >
+                                🤝 Yêu cầu hòa
+                            </button>
+                            <button
+                                class="btn btn--danger"
+                                id="btn-resign"
+                                type="button"
+                            >
+                                🏳 Đầu hàng
+                            </button>
+                        </div>
+                        <p
+                            class="online-action-cluster__hint"
+                            id="online-actions-hint"
+                            aria-live="polite"
+                        >
+                            Nút hòa có cooldown ngắn để tránh bấm nhầm.
+                        </p>
+                    </div>
+
+                    <!-- Captured pieces WHITE captured -->
+                    <div class="captured-panel" id="captured-black">
+                        <span class="captured-label">Đen bị bắt</span>
+                        <div
+                            class="captured-pieces"
+                            id="captured-black-pieces"
+                        ></div>
+                    </div>
+                </aside>
+
+                <!-- Chessboard + Clocks -->
+                <div class="board-col">
+                    <!-- Black clock (top) -->
+                    <div class="clock-card" id="clock-black" hidden>
+                        <div class="clock-color-dot clock-dot--black"></div>
+                        <div class="clock-info">
+                            <span class="clock-name">Đen</span>
+                            <span class="clock-state" id="clock-black-state"
+                                >Chờ</span
+                            >
+                            <span class="clock-time" id="clock-black-time"
+                                >—</span
+                            >
+                        </div>
+                    </div>
+
+                    <div class="board-wrapper">
+                        <div class="board" id="board"></div>
+                    </div>
+
+                    <!-- White clock (bottom) -->
+                    <div class="clock-card" id="clock-white" hidden>
+                        <div class="clock-color-dot clock-dot--white"></div>
+                        <div class="clock-info">
+                            <span class="clock-name">Trắng</span>
+                            <span class="clock-state" id="clock-white-state"
+                                >Chờ</span
+                            >
+                            <span class="clock-time" id="clock-white-time"
+                                >—</span
+                            >
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Right panel: move history -->
+                <aside class="side-panel side-panel--right">
+                    <div class="panel-head">
+                        <h2 class="panel-title">Move Log</h2>
+                        <span class="panel-status">Live</span>
+                    </div>
+                    <div class="panel-tabs" aria-hidden="true">
+                        <button class="panel-tab panel-tab--active" type="button">
+                            Moves
+                        </button>
+                        <button class="panel-tab" type="button">Info</button>
+                        <button class="panel-tab" type="button">Review</button>
+                    </div>
+                    <div class="move-list-wrap">
+                        <table class="move-list" id="move-list">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>Trắng</th>
+                                    <th>Đen</th>
+                                </tr>
+                            </thead>
+                            <tbody id="move-list-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="move-count" id="move-count">0 nước đi</div>
+                </aside>
+            </main>
+        </div>
+
+        <!-- Mobile fixed action bar -->
+        <div class="mobile-action-bar" id="mobile-action-bar" hidden>
+            <div class="mobile-action-row" id="mobile-local-actions" hidden>
+                <button
+                    class="btn btn--primary mobile-action-btn"
+                    id="btn-new-game-mobile"
+                    type="button"
+                >
+                    New game
+                </button>
+                <button
+                    class="btn btn--secondary mobile-action-btn"
+                    id="btn-undo-mobile"
+                    type="button"
+                >
+                    Undo
+                </button>
+            </div>
+            <div class="mobile-action-row" id="mobile-online-actions" hidden>
+                <button
+                    class="btn btn--secondary mobile-action-btn"
+                    id="btn-offer-draw-mobile"
+                    type="button"
+                >
+                    Offer draw
+                </button>
+                <button
+                    class="btn btn--danger mobile-action-btn"
+                    id="btn-resign-mobile"
+                    type="button"
+                >
+                    Resign
+                </button>
+            </div>
+        </div>
+
+        <!-- Game menu modal -->
+        <div class="menu-overlay" id="game-menu">
+            <div class="menu-card">
+                <!-- Step 1: Choose mode -->
+                <div id="menu-step-mode" class="menu-step">
+                    <div class="menu-logo">♟ Chess</div>
+                    <p class="menu-sub">Chọn chế độ chơi</p>
+                    <div class="menu-buttons">
+                        <button class="menu-btn menu-btn--pvp" id="menu-pvp">
+                            <span class="btn-icon">👥</span>
+                            Chơi 2 người
+                            <span class="btn-desc">PvP</span>
+                        </button>
+                        <button class="menu-btn" id="menu-ai">
+                            <span class="btn-icon">🤖</span>
+                            Chơi với máy
+                            <span class="btn-desc">vs AI</span>
+                        </button>
+                        <button
+                            class="menu-btn menu-btn--online"
+                            id="menu-online"
+                        >
+                            <span class="btn-icon">🌐</span>
+                            Chơi Online
+                            <span class="btn-desc">Xếp hạng</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Step 1b: Choose time control -->
+                <div id="menu-step-time" class="menu-step" hidden>
+                    <div class="menu-logo" id="time-step-logo">⏱ Thời gian</div>
+                    <p class="menu-sub">Chọn thời hạn ván cờ</p>
+                    <div class="time-control-grid">
+                        <button class="time-btn" data-time="60">
+                            ⚡<span>Bullet</span><small>1 phút</small>
+                        </button>
+                        <button class="time-btn" data-time="180">
+                            🔥<span>Blitz</span><small>3 phút</small>
+                        </button>
+                        <button class="time-btn" data-time="300">
+                            ⚡<span>Blitz+</span><small>5 phút</small>
+                        </button>
+                        <button class="time-btn" data-time="600">
+                            🐢<span>Rapid</span><small>10 phút</small>
+                        </button>
+                        <button class="time-btn" data-time="1800">
+                            🏛️<span>Classical</span><small>30 phút</small>
+                        </button>
+                        <button class="time-btn" data-time="0">
+                            ∞<span>Unlimited</span><small>Không giới hạn</small>
+                        </button>
+                    </div>
+                    <button class="menu-back" id="menu-back-time">
+                        ← Quay lại
+                    </button>
+                </div>
+
+                <!-- Step 2: Choose difficulty -->
+                <div id="menu-step-diff" class="menu-step" hidden>
+                    <div class="menu-logo">🤖 Chơi với máy</div>
+                    <p class="menu-sub">Chọn độ khó</p>
+                    <div class="difficulty-grid">
+                        <button
+                            class="diff-btn diff-btn--easy"
+                            data-diff="easy"
+                        >
+                            <span class="diff-icon">🟢</span>
+                            <span class="diff-label">Dễ</span>
+                            <span class="diff-depth">Random</span>
+                        </button>
+                        <button
+                            class="diff-btn diff-btn--medium"
+                            data-diff="medium"
+                        >
+                            <span class="diff-icon">🟡</span>
+                            <span class="diff-label">Trung bình</span>
+                            <span class="diff-depth">Depth 2</span>
+                        </button>
+                        <button
+                            class="diff-btn diff-btn--hard"
+                            data-diff="hard"
+                        >
+                            <span class="diff-icon">🔴</span>
+                            <span class="diff-label">Khó</span>
+                            <span class="diff-depth">Depth 3</span>
+                        </button>
+                        <button
+                            class="diff-btn diff-btn--superhard"
+                            data-diff="superhard"
+                        >
+                            <span class="diff-icon">💀</span>
+                            <span class="diff-label">Siêu khó</span>
+                            <span class="diff-depth">Depth 4</span>
+                        </button>
+                    </div>
+                    <button class="menu-back" id="menu-back">← Quay lại</button>
+                </div>
+
+                <!-- Step 3: Online ranked -->
+                <div
+                    id="menu-step-online"
+                    class="menu-step menu-step--online"
+                    hidden
+                >
+                    <div class="menu-logo">Online Chess</div>
+                    <p class="menu-sub">Đăng nhập Google để chơi xếp hạng</p>
+
+                    <div class="online-hero-pills">
+                        <span class="online-pill">Realtime Match</span>
+                        <span class="online-pill">Elo Tracking</span>
+                        <span class="online-pill">Server Clock</span>
+                    </div>
+
+                    <div class="online-auth" id="online-auth-logged-out">
+                        <button class="btn btn--primary" id="btn-google-login">
+                            Đăng nhập Google
+                        </button>
+                        <p class="online-auth-hint">
+                            Bạn cần đăng nhập để được cấp userId ổn định và tính
+                            ELO.
+                        </p>
+                    </div>
+
+                    <div
+                        class="online-auth online-auth--user"
+                        id="online-auth-logged-in"
+                        hidden
+                    >
+                        <div class="online-user-card">
+                            <img
+                                id="online-user-avatar"
+                                class="online-user-avatar"
+                                alt="avatar"
+                            />
+                            <div class="online-user-meta">
+                                <strong id="online-user-name"
+                                    >Google Player</strong
+                                >
+                                <span id="online-user-rating">Elo: 300</span>
+                            </div>
+                        </div>
+                        <div class="online-time-control">
+                            <span class="online-time-title">Time Control</span>
+                            <div class="online-time-options">
+                                <button
+                                    class="online-time-btn online-time-btn--active"
+                                    type="button"
+                                    data-online-time="10|0"
+                                    aria-pressed="true"
+                                >
+                                    10|0
+                                </button>
+                                <button
+                                    class="online-time-btn"
+                                    type="button"
+                                    data-online-time="15|5"
+                                    aria-pressed="false"
+                                >
+                                    15|5
+                                </button>
+                            </div>
+                            <span
+                                class="online-time-selected"
+                                id="online-selected-time"
+                                >Time: 10|0</span
+                            >
+                        </div>
+                        <div class="online-auth-actions">
+                            <button
+                                class="btn btn--primary"
+                                id="btn-start-online"
+                            >
+                                Tìm trận
+                            </button>
+                            <button
+                                class="btn btn--secondary"
+                                id="btn-google-logout"
+                            >
+                                Đăng xuất
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="leaderboard-card">
+                        <div class="leaderboard-head">
+                            <h3 class="leaderboard-title">Top Elo</h3>
+                            <span
+                                class="leaderboard-updated"
+                                id="leaderboard-updated"
+                                >Updating...</span
+                            >
+                        </div>
+                        <div
+                            class="leaderboard-list"
+                            id="leaderboard-list"
+                            aria-live="polite"
+                        ></div>
+                    </div>
+
+                    <button class="menu-back" id="menu-back-online">
+                        Quay lại
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Lobby: Waiting for opponent -->
+        <div id="lobby-screen" hidden>
+            <div class="lobby-card">
+                <div class="lobby-spinwrap">
+                    <div class="lobby-chess-icon">♟</div>
+                    <div class="lobby-spinner"></div>
+                </div>
+                <h2 class="lobby-title">Đang tìm đối thủ...</h2>
+                <p class="lobby-sub" id="lobby-time-control">Ranked 10|0</p>
+                <div class="lobby-meta">
+                    <span class="lobby-elapsed" id="lobby-elapsed">00:00</span>
+                    <span class="lobby-dot" aria-hidden="true"></span>
+                    <span class="lobby-hint"
+                        >Matching by rating and queue time</span
+                    >
+                </div>
+                <div class="lobby-progress" aria-hidden="true">
+                    <span></span>
+                </div>
+                <button class="btn btn--secondary" id="btn-cancel-queue">
+                    ✕ Hủy tìm trận
+                </button>
+            </div>
+        </div>
+
+        <!-- Draw offer banner -->
+        <div id="draw-offer-banner" class="draw-offer-banner" hidden>
+            <span>🤝 Đối thủ đề nghị hòa cờ!</span>
+            <button class="btn btn--primary btn--sm" onclick="acceptDraw()">
+                Chấp nhận
+            </button>
+            <button class="btn btn--secondary btn--sm" onclick="declineDraw()">
+                Từ chối
+            </button>
+        </div>
+
+        <!-- Promotion modal -->
+        <div class="modal-overlay" id="promotion-modal" hidden>
+            <div class="modal">
+                <h3 class="modal-title">Phong cấp tốt</h3>
+                <p class="modal-sub">Chọn quân muốn thăng cấp</p>
+                <div class="promotion-choices" id="promotion-choices"></div>
+            </div>
+        </div>
+
+        <!-- Game over modal -->
+        <div class="modal-overlay" id="gameover-modal" hidden>
+            <div class="modal">
+                <div class="modal-icon" id="gameover-icon">♚</div>
+                <h3 class="modal-title" id="gameover-title">Ván cờ kết thúc</h3>
+                <p class="modal-sub" id="gameover-msg"></p>
+                <button class="btn btn--primary" id="btn-again">
+                    🔄 Chơi lại
+                </button>
+            </div>
+        </div>
+
+        <!-- Resign online modal -->
+        <div class="modal-overlay" id="resign-online-modal" hidden>
+            <div class="modal">
+                <div class="modal-icon">🏳</div>
+                <h3 class="modal-title">Đầu hàng ván online?</h3>
+                <p class="modal-sub">
+                    Bạn sẽ thua ngay lập tức và kết thúc ván hiện tại.
+                </p>
+                <div class="modal-actions">
+                    <button class="btn btn--secondary" id="btn-resign-cancel">
+                        Hủy
+                    </button>
+                    <button class="btn btn--primary" id="btn-resign-confirm">
+                        Đầu hàng
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.socket.io/4.7.4/socket.io.min.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+        <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+        <script src="sounds.js"></script>
+        <script src="pieces.js"></script>
+        <script src="online.js"></script>
+        <script src="chess.js"></script>
+    </body>
+</html>
+
+

@@ -14,9 +14,9 @@
 3. Render se doc file `render.yaml` va tao 1 Web Service.
 
 Service nay se:
-- build bang `npm install --prefix chess-server`
+- build frontend + backend bang `npm ci --prefix chess && npm run build --prefix chess && npm ci --prefix chess-server`
 - start bang `node chess-server/server.js`
-- serve frontend tu `chess/` thong qua Express static
+- serve frontend tu `chess/dist` (fallback ve `chess/public/legacy` neu chua build)
 - expose API/socket tren cung domain
 
 ## 3) Cau hinh Environment Variables

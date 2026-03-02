@@ -5,6 +5,7 @@
 const express = require("express");
 const http = require("http");
 const cors = require("cors");
+const fs = require("fs");
 const path = require("path");
 const { Server } = require("socket.io");
 const {
@@ -109,7 +110,24 @@ app.use(
     }),
 );
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "../chess")));
+
+const modernClientDir = path.join(__dirname, "../chess/dist");
+const legacyClientDir = path.join(__dirname, "../chess/public/legacy");
+const modernClientIndex = path.join(modernClientDir, "index.html");
+const legacyClientIndex = path.join(legacyClientDir, "index.html");
+const hasModernBuild = fs.existsSync(modernClientIndex);
+const hasLegacyClient = fs.existsSync(legacyClientIndex);
+
+const clientDir = hasModernBuild ? modernClientDir : legacyClientDir;
+const clientIndexFile = hasModernBuild ? modernClientIndex : legacyClientIndex;
+
+if (!hasModernBuild && !hasLegacyClient) {
+    throw new Error(
+        "No frontend client bundle found. Build chess frontend or ensure legacy files exist.",
+    );
+}
+
+app.use(express.static(clientDir));
 
 const socketUsers = new Map(); // socketId -> user profile
 const liveMatches = new Map(); // roomId -> { state, finished, timeoutHandle }
@@ -401,6 +419,18 @@ app.get("/api/leaderboard", async (req, res) => {
         console.error("[API] leaderboard failed:", error.message);
         res.status(500).json({ error: "Failed to load leaderboard" });
     }
+});
+
+app.get("*", (req, res, next) => {
+    if (req.path.startsWith("/api/")) {
+        next();
+        return;
+    }
+    if (req.path.startsWith("/socket.io/")) {
+        next();
+        return;
+    }
+    res.sendFile(clientIndexFile);
 });
 
 io.on("connection", (socket) => {
@@ -706,7 +736,7 @@ async function bootstrap() {
     const PORT = process.env.PORT || 3000;
     server.listen(PORT, () => {
         console.log(`Chess server listening on http://localhost:${PORT}`);
-        console.log(`Serving static client from ../chess`);
+        console.log(`Serving static client from ${clientDir}`);
     });
 
     setInterval(() => {

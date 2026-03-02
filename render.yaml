@@ -5,7 +5,7 @@ services:
     plan: free
     autoDeploy: true
     healthCheckPath: /api/stats
-    buildCommand: npm install --prefix chess-server
+    buildCommand: NPM_CONFIG_SCRIPT_SHELL=/bin/bash npm ci --prefix chess && NPM_CONFIG_SCRIPT_SHELL=/bin/bash npm run build --prefix chess && NPM_CONFIG_SCRIPT_SHELL=/bin/bash npm ci --prefix chess-server
     startCommand: node chess-server/server.js
     disk:
       name: chess-data
